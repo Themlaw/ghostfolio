@@ -1,6 +1,10 @@
 import { AllowDuringImpersonation } from '@ghostfolio/api/decorators/allow-during-impersonation.decorator';
 import { HasPermission } from '@ghostfolio/api/decorators/has-permission.decorator';
 import { HasPermissionGuard } from '@ghostfolio/api/guards/has-permission.guard';
+import {
+  generateMcpToken,
+  hashMcpToken
+} from '@ghostfolio/api/helper/mcp-token.helper';
 import { AccessService } from '@ghostfolio/api/services/access/access.service';
 import { ConfigurationService } from '@ghostfolio/api/services/configuration/configuration.service';
 import { CreateAccessDto, UpdateAccessDto } from '@ghostfolio/common/dtos';
@@ -11,7 +15,11 @@ import {
 } from '@ghostfolio/common/helper';
 import { Access, AccessSettings } from '@ghostfolio/common/interfaces';
 import { permissions } from '@ghostfolio/common/permissions';
-import { getScopesOfAccess } from '@ghostfolio/common/scopes';
+import {
+  getScopesOfAccess,
+  SCOPES_OF_READ_RESTRICTED_ACCESS,
+  SCOPES_OF_WRITE_ACCESS
+} from '@ghostfolio/common/scopes';
 import type { RequestWithUser } from '@ghostfolio/common/types';
 
 import {
@@ -76,7 +84,7 @@ export class AccessController {
   @UseGuards(AuthGuard('jwt'), HasPermissionGuard)
   public async createAccess(
     @Body() data: CreateAccessDto
-  ): Promise<AccessModel> {
+  ): Promise<Omit<AccessModel, 'tokenHash'> & { token?: string }> {
     if (
       this.configurationService.get('ENABLE_FEATURE_SUBSCRIPTION') &&
       this.request.user.subscription?.type === SubscriptionType.Basic
@@ -122,8 +130,22 @@ export class AccessController {
       );
     }
 
+    // The token of an access of the Model Context Protocol (MCP) is shown once
+    // in the response. The database stores only its hash.
+    const token = type === 'MCP' ? generateMcpToken() : undefined;
+
+    let scopesOfAccess = data.scopes;
+
+    if (data.readOnly) {
+      scopesOfAccess = (
+        scopesOfAccess ?? SCOPES_OF_READ_RESTRICTED_ACCESS
+      ).filter((scope) => {
+        return !SCOPES_OF_WRITE_ACCESS.includes(scope);
+      });
+    }
+
     try {
-      return await this.accessService.createAccess({
+      const created = await this.accessService.createAccess({
         type,
         alias: data.alias || undefined,
         expiresAt: new Date(data.expiresAt),
@@ -132,11 +154,16 @@ export class AccessController {
           : undefined,
         scopes: getScopesOfAccess({
           type,
-          scopes: data.scopes
+          scopes: scopesOfAccess
         }),
         settings: this.accessService.buildSettings(data.filters),
+        tokenHash: token ? hashMcpToken(token) : undefined,
         user: { connect: { id: this.request.user.id } }
       });
+
+      const access = omitTokenHash(created);
+
+      return token ? { ...access, token } : access;
     } catch {
       throw new HttpException(
         getReasonPhrase(StatusCodes.BAD_REQUEST),
@@ -175,7 +202,7 @@ export class AccessController {
   public async updateAccess(
     @Body() data: UpdateAccessDto,
     @Param('id') id: string
-  ): Promise<AccessModel> {
+  ): Promise<Omit<AccessModel, 'tokenHash'>> {
     if (
       this.configurationService.get('ENABLE_FEATURE_SUBSCRIPTION') &&
       this.request.user.subscription?.type === SubscriptionType.Basic
@@ -232,7 +259,7 @@ export class AccessController {
     }
 
     try {
-      return await this.accessService.updateAccess({
+      const updated = await this.accessService.updateAccess({
         data: {
           alias: data.alias || null,
           expiresAt: new Date(data.expiresAt),
@@ -247,6 +274,8 @@ export class AccessController {
         },
         where: { id }
       });
+
+      return omitTokenHash(updated);
     } catch {
       throw new HttpException(
         getReasonPhrase(StatusCodes.BAD_REQUEST),
@@ -254,4 +283,12 @@ export class AccessController {
       );
     }
   }
+}
+
+function omitTokenHash<T extends { tokenHash?: string | null }>(access: T) {
+  const rest: Partial<T> = { ...access };
+
+  delete rest.tokenHash;
+
+  return rest as Omit<T, 'tokenHash'>;
 }

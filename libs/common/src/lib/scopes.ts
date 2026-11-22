@@ -16,8 +16,12 @@ export const scopes = {
   activityDelete: 'activity:delete',
   activityRead: 'activity:read',
   activityUpdate: 'activity:update',
+  notificationCreate: 'notification:create',
   portfolioRead: 'portfolio:read',
   portfolioReadValues: 'portfolio:read:values',
+  reportCreate: 'report:create',
+  reportRead: 'report:read',
+  reportUpdate: 'report:update',
   watchlistCreate: 'watchlist:create',
   watchlistDelete: 'watchlist:delete',
   watchlistRead: 'watchlist:read'
@@ -33,6 +37,7 @@ export const SCOPES_OF_READ_ACCESS: readonly Scope[] = [
   scopes.activityRead,
   scopes.portfolioRead,
   scopes.portfolioReadValues,
+  scopes.reportRead,
   scopes.watchlistRead
 ];
 
@@ -46,6 +51,9 @@ export const SCOPES_OF_WRITE_ACCESS: readonly Scope[] = [
   scopes.activityCreate,
   scopes.activityDelete,
   scopes.activityUpdate,
+  scopes.notificationCreate,
+  scopes.reportCreate,
+  scopes.reportUpdate,
   scopes.watchlistCreate,
   scopes.watchlistDelete
 ];
@@ -68,7 +76,14 @@ export const SCOPES_OF_READ_RESTRICTED_ACCESS: readonly Scope[] =
  * monetary values.
  */
 const SCOPES_OF_TYPE: Record<AccessType, readonly Scope[]> = {
-  MCP: [...SCOPES_OF_READ_ACCESS, scopes.accountUpdate, scopes.activityCreate],
+  MCP: [
+    ...SCOPES_OF_READ_ACCESS,
+    scopes.accountUpdate,
+    scopes.activityCreate,
+    scopes.notificationCreate,
+    scopes.reportCreate,
+    scopes.reportUpdate
+  ],
   PRIVATE: Object.values(scopes),
   PUBLIC: SCOPES_OF_PUBLIC_ACCESS
 };

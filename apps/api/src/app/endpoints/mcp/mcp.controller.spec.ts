@@ -221,7 +221,11 @@ describe('GhostfolioMcpController', () => {
       'get-activities',
       'get-performance',
       'get-portfolio',
-      'get-watchlist'
+      'get-watchlist',
+      'get-decision-answers',
+      'get-open-decisions',
+      'get-report',
+      'get-reports'
     ]);
   });
 
@@ -246,7 +250,14 @@ describe('GhostfolioMcpController', () => {
       'get-watchlist',
       'import-activities',
       'search-asset-profiles',
-      'update-account-balance'
+      'update-account-balance',
+      'get-decision-answers',
+      'get-open-decisions',
+      'get-report',
+      'get-reports',
+      'publish-report',
+      'send-notification',
+      'update-report'
     ]);
   });
 
@@ -266,7 +277,11 @@ describe('GhostfolioMcpController', () => {
       'get-activities',
       'get-performance',
       'get-portfolio',
-      'get-watchlist'
+      'get-watchlist',
+      'get-decision-answers',
+      'get-open-decisions',
+      'get-report',
+      'get-reports'
     ]);
   });
 
@@ -289,7 +304,14 @@ describe('GhostfolioMcpController', () => {
       'get-watchlist',
       'import-activities',
       'search-asset-profiles',
-      'update-account-balance'
+      'update-account-balance',
+      'get-decision-answers',
+      'get-open-decisions',
+      'get-report',
+      'get-reports',
+      'publish-report',
+      'send-notification',
+      'update-report'
     ]);
   });
 
@@ -358,6 +380,54 @@ describe('GhostfolioMcpController', () => {
 
   // The tools have no try and catch, hence the filter is the only guarantee
   // that an unexpected exception does not expose internals
+  it('Requires the scopes of reports for the tools of reports', () => {
+    const expectedScopes: Record<string, string> = {
+      getDecisionAnswers: scopes.reportRead,
+      getOpenDecisions: scopes.reportRead,
+      getReport: scopes.reportRead,
+      getReports: scopes.reportRead,
+      publishReport: scopes.reportCreate,
+      sendNotification: scopes.notificationCreate,
+      updateReport: scopes.reportUpdate
+    };
+
+    for (const [methodName, scope] of Object.entries(expectedScopes)) {
+      expect(
+        getMetadataOfMethod<string[]>(MCP_SCOPES_METADATA_KEY, methodName)
+      ).toEqual([scope]);
+    }
+  });
+
+  it('Passes the user of the access to the tools of reports', async () => {
+    const mcpService = {
+      getOpenDecisions: jest.fn(),
+      publishReport: jest.fn()
+    };
+
+    const controller = new GhostfolioMcpController(
+      mcpService as unknown as McpService
+    );
+
+    const context = { userId: 'user-id' } as ImpersonationContext;
+
+    await controller.getOpenDecisions(context);
+    await controller.publishReport(context, {
+      kind: 'BRIEF',
+      summary: 'Summary',
+      title: 'Title'
+    });
+
+    expect(mcpService.getOpenDecisions).toHaveBeenCalledWith({
+      userId: 'user-id'
+    });
+    expect(mcpService.publishReport).toHaveBeenCalledWith({
+      kind: 'BRIEF',
+      summary: 'Summary',
+      title: 'Title',
+      userId: 'user-id'
+    });
+  });
+
   it('Applies the filter of the exceptions of the tools', () => {
     expect(
       Reflect.getMetadata(EXCEPTION_FILTERS_METADATA, GhostfolioMcpController)

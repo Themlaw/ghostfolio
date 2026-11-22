@@ -5,6 +5,7 @@ import { AccessType } from '@ghostfolio/prisma/enums';
 
 import {
   IsArray,
+  IsBoolean,
   IsEnum,
   IsIn,
   IsISO8601,
@@ -35,6 +36,10 @@ export class CreateAccessDto {
   @IsIn(Object.values(scopes), { each: true })
   @IsOptional()
   scopes?: Scope[];
+
+  @IsBoolean()
+  @IsOptional()
+  readOnly?: boolean;
 
   @IsEnum(AccessType)
   @IsOptional()

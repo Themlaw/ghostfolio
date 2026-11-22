@@ -199,3 +199,176 @@ export const UPDATE_ACCOUNT_BALANCE_PARAMETERS = z.object({
     })
     .describe('The date of the cash balance, as an ISO 8601 date')
 });
+
+const REPORT_KINDS = [
+  'ALLOCATION',
+  'ANALYSIS',
+  'BRIEF',
+  'LESSON',
+  'REVIEW'
+] as const;
+
+const REPORT_POINT_PARAMETERS = z.object({
+  forYou: z
+    .string()
+    .max(2000)
+    .optional()
+    .describe('What the point means for the user in particular'),
+  level: z
+    .enum(['important', 'note', 'info'])
+    .describe('The importance of the point'),
+  subject: z
+    .string()
+    .min(1)
+    .max(200)
+    .describe('The subject of the point, e.g. a holding or a theme'),
+  text: z.string().min(1).max(4000).describe('The text of the point')
+});
+
+const REPORT_CONCEPT_PARAMETERS = z.object({
+  definition: z.string().min(1).max(4000),
+  example: z.string().min(1).max(4000),
+  forYou: z.string().max(2000).optional(),
+  name: z.string().min(1).max(200),
+  theme: z.string().max(200).optional()
+});
+
+const REPORT_SOURCE_PARAMETERS = z.object({
+  date: z.iso.date().optional().describe('The date of the source'),
+  title: z.string().min(1).max(500),
+  url: z.url({ protocol: /^https?$/ }).max(2000)
+});
+
+const REPORT_DECISION_PARAMETERS = z.object({
+  options: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(100).describe('The identifier of the option'),
+        label: z.string().min(1).max(500).describe('The text of the option')
+      })
+    )
+    .max(10)
+    .optional()
+    .describe(
+      'The options which the user can choose. Without options, the user answers with a text.'
+    ),
+  question: z.string().min(1).max(2000).describe('The question to decide')
+});
+
+const REPORT_ID_PARAMETER = z
+  .string()
+  .min(1)
+  .max(100)
+  .describe('The identifier of the report');
+
+export const GET_DECISION_ANSWERS_PARAMETERS = z.object({
+  since: z.iso
+    .datetime({ offset: true })
+    .optional()
+    .describe(
+      'Only the decisions which the user decided at or after this date and time, as an ISO 8601 date and time, e.g. 2026-11-01T00:00:00Z'
+    )
+});
+
+export const GET_REPORT_PARAMETERS = z.object({ id: REPORT_ID_PARAMETER });
+
+export const GET_REPORTS_PARAMETERS = z.object({
+  kind: z.enum(REPORT_KINDS).optional().describe('The kind of the reports'),
+  q: z
+    .string()
+    .trim()
+    .min(1)
+    .max(SEARCH_QUERY_MAXIMUM_LENGTH)
+    .optional()
+    .describe('Text which the title, the summary or the details contain'),
+  skip: z.number().int().min(0).optional(),
+  subject: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe('A subject which the reports name'),
+  take: z.number().int().min(1).max(20).optional()
+});
+
+export const PUBLISH_REPORT_PARAMETERS = z.object({
+  charts: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe('Data of charts which the application renders'),
+  concepts: z.array(REPORT_CONCEPT_PARAMETERS).max(50).optional(),
+  decisions: z
+    .array(REPORT_DECISION_PARAMETERS)
+    .max(10)
+    .optional()
+    .describe('Questions which the user decides in the application'),
+  details: z
+    .string()
+    .max(100000)
+    .optional()
+    .describe('The details of the report, as markdown'),
+  kind: z.enum(REPORT_KINDS).describe('The kind of the report'),
+  points: z.array(REPORT_POINT_PARAMETERS).max(100).optional(),
+  publishedAt: z.iso
+    .datetime({ offset: true })
+    .optional()
+    .describe('The date and time of the publication, default: now'),
+  sources: z.array(REPORT_SOURCE_PARAMETERS).max(50).optional(),
+  subjects: z
+    .array(z.string().min(1).max(200))
+    .max(50)
+    .optional()
+    .describe('The subjects of the report, e.g. symbols or themes'),
+  summary: z.string().min(1).max(5000).describe('The summary of the report'),
+  title: z.string().min(1).max(300).describe('The title of the report')
+});
+
+export const SEND_NOTIFICATION_PARAMETERS = z.object({
+  body: z.string().min(1).max(500).describe('The text of the notification'),
+  title: z.string().min(1).max(100).describe('The title of the notification'),
+  url: z
+    .string()
+    .max(2000)
+    .refine(
+      (value) => {
+        return (
+          (value.startsWith('/') && !value.startsWith('//')) ||
+          value.startsWith('https://')
+        );
+      },
+      { error: 'The URL must be a path of the application or a HTTPS URL' }
+    )
+    .optional()
+    .describe('The path or the URL which the notification opens')
+});
+
+export const UPDATE_REPORT_PARAMETERS = z.object({
+  charts: z.record(z.string(), z.unknown()).optional(),
+  concepts: z.array(REPORT_CONCEPT_PARAMETERS).max(50).optional(),
+  decisions: z
+    .array(
+      z.object({
+        id: z
+          .string()
+          .min(1)
+          .max(100)
+          .describe('The identifier of the decision'),
+        status: z
+          .enum(['OPEN', 'DISMISSED'])
+          .describe(
+            'OPEN reopens the decision and removes its answer, DISMISSED withdraws it. Only the user decides a decision.'
+          )
+      })
+    )
+    .max(10)
+    .optional()
+    .describe('Changes of the status of decisions of the report'),
+  details: z.string().max(100000).optional(),
+  id: REPORT_ID_PARAMETER,
+  kind: z.enum(REPORT_KINDS).optional(),
+  points: z.array(REPORT_POINT_PARAMETERS).max(100).optional(),
+  sources: z.array(REPORT_SOURCE_PARAMETERS).max(50).optional(),
+  subjects: z.array(z.string().min(1).max(200)).max(50).optional(),
+  summary: z.string().min(1).max(5000).optional(),
+  title: z.string().min(1).max(300).optional()
+});

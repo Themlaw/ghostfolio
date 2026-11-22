@@ -1,3 +1,4 @@
+import { hashMcpToken } from '@ghostfolio/api/helper/mcp-token.helper';
 import { AccessService } from '@ghostfolio/api/services/access/access.service';
 import { ConfigurationService } from '@ghostfolio/api/services/configuration/configuration.service';
 import { PrismaService } from '@ghostfolio/api/services/prisma/prisma.service';
@@ -17,6 +18,45 @@ import { addDays, subDays } from 'date-fns';
 
 import { ImpersonationService } from './impersonation.service';
 
+interface AccessWhere {
+  granteeUserId?: string;
+  id?: string;
+  OR?: AccessWhere[];
+  tokenHash?: string | null;
+  type?: string | { in?: string[] };
+}
+
+function matches(access: Partial<Access>, where: AccessWhere) {
+  if (where.granteeUserId && where.granteeUserId !== access.granteeUserId) {
+    return false;
+  }
+
+  if (where.id && where.id !== access.id) {
+    return false;
+  }
+
+  if (
+    where.tokenHash !== undefined &&
+    where.tokenHash !== (access.tokenHash ?? null)
+  ) {
+    return false;
+  }
+
+  if (typeof where.type === 'string' && where.type !== access.type) {
+    return false;
+  }
+
+  if (
+    typeof where.type === 'object' &&
+    where.type.in &&
+    !where.type.in.includes(access.type as string)
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 describe('Impersonation service', () => {
   const accessId = 'a5d3f2c1-9b4e-4c8a-8f2d-1e6b7c9a0d3f';
   const authenticatedUserId = 'ffb08949-2f8a-4b6e-88fd-0f1e6b6b5f5d';
@@ -32,10 +72,12 @@ describe('Impersonation service', () => {
   function createService({
     access,
     impersonatedUser,
+    isLegacyTokenAllowed = false,
     isSubscriptionEnabled = false
   }: {
     access?: Partial<Access>;
     impersonatedUser?: unknown;
+    isLegacyTokenAllowed?: boolean;
     isSubscriptionEnabled?: boolean;
   } = {}) {
     const getSubscription = jest.fn().mockResolvedValue({
@@ -46,6 +88,10 @@ describe('Impersonation service', () => {
 
     const configurationService = {
       get: (key: string) => {
+        if (key === 'MCP_ALLOW_LEGACY_TOKENS') {
+          return isLegacyTokenAllowed;
+        }
+
         return key === 'ENABLE_FEATURE_SUBSCRIPTION'
           ? isSubscriptionEnabled
           : undefined;
@@ -54,35 +100,18 @@ describe('Impersonation service', () => {
 
     const prismaService = {
       access: {
-        findFirst: async ({
-          where
-        }: {
-          where?: {
-            granteeUserId?: string;
-            id?: string;
-            type?: { in?: string[] };
-          };
-        }) => {
+        findFirst: async ({ where }: { where?: AccessWhere }) => {
           if (!access) {
             return null;
           }
 
-          if (
-            where?.granteeUserId &&
-            where.granteeUserId !== access.granteeUserId
-          ) {
-            return null;
-          }
+          const conditions = where?.OR ?? [where ?? {}];
 
-          if (where?.id && where.id !== access.id) {
-            return null;
-          }
-
-          if (where?.type?.in && !where.type.in.includes(access.type)) {
-            return null;
-          }
-
-          return access;
+          return conditions.some((condition) => {
+            return matches(access, condition);
+          })
+            ? access
+            : null;
         },
         update: updateAccess
       },
@@ -265,12 +294,15 @@ describe('Impersonation service', () => {
   // A client of the model context protocol has no authenticated user, hence
   // the access itself is the credential
   describe('With an access as the credential', () => {
+    const token = 'gfmcp_test-token';
+
     const accessOfMcp = {
       expiresAt: addDays(new Date(), 1),
       granteeUserId: null,
       id: accessId,
       scopes: [scopes.portfolioRead],
       settings: {},
+      tokenHash: hashMcpToken(token),
       type: 'MCP',
       userId: impersonatedUserId
     } as unknown as Access;
@@ -290,7 +322,7 @@ describe('Impersonation service', () => {
       } = await createService({
         access: accessOfMcp,
         impersonatedUser
-      }).service.resolve({ impersonationId: accessId, types: ['MCP'] });
+      }).service.resolve({ impersonationId: token, types: ['MCP'] });
 
       expect(isActive).toEqual(true);
       expect(scopesOfAccess).toEqual([scopes.portfolioRead]);
@@ -313,7 +345,7 @@ describe('Impersonation service', () => {
       const { isActive, userId } = await createService({
         access: accessOfMcp,
         impersonatedUser
-      }).service.resolve({ impersonationId: accessId, types: [] });
+      }).service.resolve({ impersonationId: token, types: [] });
 
       expect(isActive).toEqual(false);
       expect(userId).toBeUndefined();
@@ -323,7 +355,7 @@ describe('Impersonation service', () => {
       const { isActive, userId } = await createService({
         access: { ...accessOfMcp, type: 'PRIVATE' } as unknown as Access,
         impersonatedUser
-      }).service.resolve({ impersonationId: accessId, types: ['MCP'] });
+      }).service.resolve({ impersonationId: token, types: ['MCP'] });
 
       expect(isActive).toEqual(false);
       expect(userId).toBeUndefined();
@@ -333,7 +365,7 @@ describe('Impersonation service', () => {
       const { isActive, userId } = await createService({
         access: { ...accessOfMcp, type: 'PUBLIC' } as unknown as Access,
         impersonatedUser
-      }).service.resolve({ impersonationId: accessId, types: ['MCP'] });
+      }).service.resolve({ impersonationId: token, types: ['MCP'] });
 
       expect(isActive).toEqual(false);
       expect(userId).toBeUndefined();
@@ -346,7 +378,7 @@ describe('Impersonation service', () => {
           expiresAt: subDays(new Date(), 1)
         } as unknown as Access,
         impersonatedUser
-      }).service.resolve({ impersonationId: accessId, types: ['MCP'] });
+      }).service.resolve({ impersonationId: token, types: ['MCP'] });
 
       expect(isActive).toEqual(false);
       expect(userId).toBeUndefined();
@@ -361,7 +393,7 @@ describe('Impersonation service', () => {
         impersonatedUser
       });
 
-      await service.resolve({ impersonationId: accessId, types: ['MCP'] });
+      await service.resolve({ impersonationId: token, types: ['MCP'] });
 
       expect(updateAccess).not.toHaveBeenCalled();
     });
@@ -392,6 +424,51 @@ describe('Impersonation service', () => {
 
       expect(isActive).toEqual(false);
       expect(userId).toBeUndefined();
+    });
+
+    it('Refuses the identifier of the access as the token', async () => {
+      const { isActive } = await createService({
+        access: accessOfMcp,
+        impersonatedUser,
+        isLegacyTokenAllowed: true
+      }).service.resolve({ impersonationId: accessId, types: ['MCP'] });
+
+      expect(isActive).toEqual(false);
+    });
+
+    it('Gives the identifier of the access, not the token', async () => {
+      const { accessId: resolvedAccessId } = await createService({
+        access: accessOfMcp,
+        impersonatedUser
+      }).service.resolve({ impersonationId: token, types: ['MCP'] });
+
+      expect(resolvedAccessId).toEqual(accessId);
+    });
+
+    describe('Legacy access without a token hash', () => {
+      const legacyAccess = {
+        ...accessOfMcp,
+        tokenHash: null
+      } as unknown as Access;
+
+      it('Refuses the identifier by default', async () => {
+        const { isActive } = await createService({
+          access: legacyAccess,
+          impersonatedUser
+        }).service.resolve({ impersonationId: accessId, types: ['MCP'] });
+
+        expect(isActive).toEqual(false);
+      });
+
+      it('Accepts the identifier if MCP_ALLOW_LEGACY_TOKENS is enabled', async () => {
+        const { isActive } = await createService({
+          access: legacyAccess,
+          impersonatedUser,
+          isLegacyTokenAllowed: true
+        }).service.resolve({ impersonationId: accessId, types: ['MCP'] });
+
+        expect(isActive).toEqual(true);
+      });
     });
   });
 

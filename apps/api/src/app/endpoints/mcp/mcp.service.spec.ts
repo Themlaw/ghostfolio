@@ -1,3 +1,5 @@
+import { PushService } from '@ghostfolio/api/app/endpoints/push/push.service';
+import { ReportsService } from '@ghostfolio/api/app/endpoints/reports/reports.service';
 import { CallerFacingError } from '@ghostfolio/api/errors/caller-facing.error';
 import { encodeDataSource } from '@ghostfolio/api/helper/data-source.helper';
 import { AccountBalanceService } from '@ghostfolio/api/services/account-balance/account-balance.service';
@@ -45,6 +47,8 @@ describe('McpService', () => {
   let importService: ImportService;
   let mcpService: McpService;
   let portfolioTableService: PortfolioTableService;
+  let pushService: PushService;
+  let reportsService: ReportsService;
   let symbolProfileService: SymbolProfileService;
   let symbolService: SymbolService;
   let userService: UserService;
@@ -63,6 +67,7 @@ describe('McpService', () => {
   beforeEach(() => {
     configuration = {
       DATA_SOURCES_GHOSTFOLIO_DATA_PROVIDER: [],
+      ENABLE_FEATURE_REPORTS: true,
       ENABLE_FEATURE_SUBSCRIPTION: false
     };
 
@@ -94,6 +99,26 @@ describe('McpService', () => {
       getWatchlistTable: jest.fn().mockResolvedValue('## Watchlist')
     } as unknown as PortfolioTableService;
 
+    pushService = {
+      isConfigured: jest.fn().mockReturnValue(true),
+      sendToUser: jest.fn().mockResolvedValue(2)
+    } as unknown as PushService;
+
+    reportsService = {
+      createReport: jest.fn().mockResolvedValue({ id: 'report-id' }),
+      getDecisions: jest.fn().mockResolvedValue([]),
+      getReport: jest.fn().mockResolvedValue({
+        decisions: [{ id: 'decision-id' }],
+        id: 'report-id'
+      }),
+      getReports: jest.fn().mockResolvedValue({ count: 0, reports: [] }),
+      setDecisionStatus: jest.fn(),
+      updateReport: jest.fn().mockResolvedValue({
+        decisions: [{ id: 'decision-id' }],
+        id: 'report-id'
+      })
+    } as unknown as ReportsService;
+
     symbolProfileService = {
       getSymbolProfilesOfUser: jest.fn().mockResolvedValue([])
     } as unknown as SymbolProfileService;
@@ -111,6 +136,8 @@ describe('McpService', () => {
       configurationService,
       importService,
       portfolioTableService,
+      pushService,
+      reportsService,
       symbolProfileService,
       symbolService,
       userService
@@ -783,6 +810,129 @@ describe('McpService', () => {
         balance: 1000,
         date: '2024-01-01'
       });
+    });
+  });
+
+  describe('reports', () => {
+    it('Gives the open decisions of the user', async () => {
+      await mcpService.getOpenDecisions({ userId });
+
+      expect(reportsService.getDecisions).toHaveBeenCalledWith({
+        status: 'OPEN',
+        userId
+      });
+    });
+
+    it('Gives the answers since a date', async () => {
+      await mcpService.getDecisionAnswers({
+        userId,
+        since: '2026-11-01T00:00:00Z'
+      });
+
+      expect(reportsService.getDecisions).toHaveBeenCalledWith({
+        status: 'DECIDED',
+        userId,
+        since: new Date('2026-11-01T00:00:00Z')
+      });
+    });
+
+    it('Publishes a report with a decision if the role permits', async () => {
+      setupUser([permissions.createReport]);
+
+      const parameters = {
+        decisions: [
+          {
+            options: [{ id: 'a', label: 'Buy' }],
+            question: 'Buy?'
+          }
+        ],
+        kind: 'BRIEF' as const,
+        summary: 'Summary',
+        title: 'Title'
+      };
+
+      await mcpService.publishReport({ ...parameters, userId });
+
+      expect(reportsService.createReport).toHaveBeenCalledWith({
+        userId,
+        data: parameters
+      });
+    });
+
+    it('Refuses to publish a report without the permission', async () => {
+      setupUser([]);
+
+      await expect(
+        mcpService.publishReport({
+          kind: 'BRIEF',
+          summary: 'Summary',
+          title: 'Title',
+          userId
+        })
+      ).rejects.toBeInstanceOf(HttpException);
+
+      expect(reportsService.createReport).not.toHaveBeenCalled();
+    });
+
+    it('Refuses the tools of reports while the feature is disabled', async () => {
+      configuration.ENABLE_FEATURE_REPORTS = false;
+
+      await expect(mcpService.getOpenDecisions({ userId })).rejects.toThrow(
+        CallerFacingError
+      );
+    });
+
+    it('Reopens or dismisses a decision of the report', async () => {
+      setupUser([permissions.updateReport]);
+
+      await mcpService.updateReport({
+        id: 'report-id',
+        userId,
+        decisions: [{ id: 'decision-id', status: 'DISMISSED' }],
+        title: 'New title'
+      });
+
+      expect(reportsService.setDecisionStatus).toHaveBeenCalledWith({
+        id: 'decision-id',
+        status: 'DISMISSED',
+        userId
+      });
+    });
+
+    it('Refuses a decision which belongs to another report', async () => {
+      setupUser([permissions.updateReport]);
+
+      await expect(
+        mcpService.updateReport({
+          id: 'report-id',
+          userId,
+          decisions: [{ id: 'other-decision', status: 'OPEN' }]
+        })
+      ).rejects.toThrow(CallerFacingError);
+
+      expect(reportsService.setDecisionStatus).not.toHaveBeenCalled();
+    });
+
+    it('Sends a notification', async () => {
+      const result = await mcpService.sendNotification({
+        body: 'Body',
+        title: 'Title',
+        userId
+      });
+
+      expect(pushService.sendToUser).toHaveBeenCalledWith({
+        userId,
+        notification: { body: 'Body', title: 'Title', url: undefined }
+      });
+      expect(result.content[0].text).toContain('2');
+    });
+
+    it('Refuses to send a notification without the configuration', async () => {
+      (pushService.isConfigured as jest.Mock).mockReturnValue(false);
+
+      await expect(
+        mcpService.sendNotification({ body: 'Body', title: 'Title', userId })
+      ).rejects.toThrow(CallerFacingError);
     });
   });
 });

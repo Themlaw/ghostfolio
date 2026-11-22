@@ -86,6 +86,10 @@ export class InfoService {
       );
     }
 
+    if (this.configurationService.get('ENABLE_FEATURE_REPORTS')) {
+      globalPermissions.push(permissions.enableReports);
+    }
+
     if (this.configurationService.get('ENABLE_FEATURE_STATISTICS')) {
       globalPermissions.push(permissions.enableStatistics);
     }

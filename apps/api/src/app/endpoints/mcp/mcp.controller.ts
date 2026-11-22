@@ -16,10 +16,16 @@ import 'zod/compile';
 import {
   GET_ACCOUNTS_PARAMETERS,
   GET_ACTIVITIES_PARAMETERS,
+  GET_DECISION_ANSWERS_PARAMETERS,
   GET_PERFORMANCE_PARAMETERS,
+  GET_REPORT_PARAMETERS,
+  GET_REPORTS_PARAMETERS,
   IMPORT_ACTIVITIES_PARAMETERS,
+  PUBLISH_REPORT_PARAMETERS,
   SEARCH_ASSET_PROFILES_PARAMETERS,
-  UPDATE_ACCOUNT_BALANCE_PARAMETERS
+  SEND_NOTIFICATION_PARAMETERS,
+  UPDATE_ACCOUNT_BALANCE_PARAMETERS,
+  UPDATE_REPORT_PARAMETERS
 } from './mcp.schemas';
 import { McpService } from './mcp.service';
 
@@ -213,6 +219,141 @@ export class GhostfolioMcpController {
     @Payload() parameters: z.infer<typeof UPDATE_ACCOUNT_BALANCE_PARAMETERS>
   ) {
     return this.mcpService.updateAccountBalance({ ...parameters, userId });
+  }
+
+  @RequiresScopeOfAccess(scopes.reportRead)
+  @Tool({
+    annotations: {
+      openWorldHint: false,
+      readOnlyHint: true,
+      title: 'Get decision answers'
+    },
+    description:
+      'Gives the decisions which the user decided in the application, the most recently decided first, with the question, the options, the chosen option and the text of the answer. Use the since parameter to read only the answers since the last report, before you publish the next one.',
+    name: 'get-decision-answers',
+    parameters: GET_DECISION_ANSWERS_PARAMETERS
+  })
+  public async getDecisionAnswers(
+    @Impersonation() { userId }: ImpersonationContext,
+    @Payload() parameters: z.infer<typeof GET_DECISION_ANSWERS_PARAMETERS>
+  ) {
+    return this.mcpService.getDecisionAnswers({ ...parameters, userId });
+  }
+
+  @RequiresScopeOfAccess(scopes.reportRead)
+  @Tool({
+    annotations: {
+      openWorldHint: false,
+      readOnlyHint: true,
+      title: 'Get open decisions'
+    },
+    description:
+      'Gives the decisions which the user has not decided yet, with the question, the options and the report which asked it. Check it before you publish a report, to not ask a question twice.',
+    name: 'get-open-decisions'
+  })
+  public async getOpenDecisions(
+    @Impersonation() { userId }: ImpersonationContext
+  ) {
+    return this.mcpService.getOpenDecisions({ userId });
+  }
+
+  @RequiresScopeOfAccess(scopes.reportRead)
+  @Tool({
+    annotations: {
+      openWorldHint: false,
+      readOnlyHint: true,
+      title: 'Get report'
+    },
+    description:
+      'Gives a report of the user with its points, decisions, concepts, details and sources.',
+    name: 'get-report',
+    parameters: GET_REPORT_PARAMETERS
+  })
+  public async getReport(
+    @Impersonation() { userId }: ImpersonationContext,
+    @Payload() parameters: z.infer<typeof GET_REPORT_PARAMETERS>
+  ) {
+    return this.mcpService.getReport({ ...parameters, userId });
+  }
+
+  @RequiresScopeOfAccess(scopes.reportRead)
+  @Tool({
+    annotations: {
+      openWorldHint: false,
+      readOnlyHint: true,
+      title: 'Get reports'
+    },
+    description:
+      'Gives the reports of the user, the most recently published first, which match the filters. At most 20 reports are given per call, hence get the further reports with the skip parameter.',
+    name: 'get-reports',
+    parameters: GET_REPORTS_PARAMETERS
+  })
+  public async getReports(
+    @Impersonation() { userId }: ImpersonationContext,
+    @Payload() parameters: z.infer<typeof GET_REPORTS_PARAMETERS>
+  ) {
+    return this.mcpService.getReports({ ...parameters, userId });
+  }
+
+  @RequiresScopeOfAccess(scopes.reportCreate)
+  @Tool({
+    annotations: {
+      destructiveHint: false,
+      openWorldHint: false,
+      readOnlyHint: false,
+      title: 'Publish report'
+    },
+    description:
+      'Publishes a report to the user: a brief, an analysis, a lesson, an allocation proposal or a review. A report has points with a level (important, note or info), optional concepts, details as markdown, sources and decisions. A decision is a question with options, which the user answers in the application. A report with an important point or with a decision notifies the user. Each call publishes a new report, hence check with get-reports whether the report exists already.',
+    name: 'publish-report',
+    parameters: PUBLISH_REPORT_PARAMETERS
+  })
+  public async publishReport(
+    @Impersonation() { userId }: ImpersonationContext,
+    @Payload() parameters: z.infer<typeof PUBLISH_REPORT_PARAMETERS>
+  ) {
+    return this.mcpService.publishReport({ ...parameters, userId });
+  }
+
+  @RequiresScopeOfAccess(scopes.notificationCreate)
+  @Tool({
+    annotations: {
+      destructiveHint: false,
+      openWorldHint: false,
+      readOnlyHint: false,
+      title: 'Send notification'
+    },
+    description:
+      'Sends a push notification with a title, a text and an optional URL to the devices of the user. Use it sparingly, only for what the user has to see soon.',
+    name: 'send-notification',
+    parameters: SEND_NOTIFICATION_PARAMETERS
+  })
+  public async sendNotification(
+    @Impersonation() { userId }: ImpersonationContext,
+    @Payload() parameters: z.infer<typeof SEND_NOTIFICATION_PARAMETERS>
+  ) {
+    return this.mcpService.sendNotification({ ...parameters, userId });
+  }
+
+  @RequiresScopeOfAccess(scopes.reportUpdate)
+  @Tool({
+    annotations: {
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+      readOnlyHint: false,
+      title: 'Update report'
+    },
+    description:
+      'Updates the fields of a report, which replace the previous value, and reopens or dismisses decisions of the report. It cannot answer a decision, because only the user decides.',
+    name: 'update-report',
+    parameters: UPDATE_REPORT_PARAMETERS
+  })
+  public async updateReport(
+    @Impersonation() { userId }: ImpersonationContext,
+    @Payload() parameters: z.infer<typeof UPDATE_REPORT_PARAMETERS>
+  ) {
+    return this.mcpService.updateReport({ ...parameters, userId });
   }
 
   private hasScopeToReadValues(impersonationScopes: string[]) {

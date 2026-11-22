@@ -1,3 +1,5 @@
+import { PushService } from '@ghostfolio/api/app/endpoints/push/push.service';
+import { ReportsService } from '@ghostfolio/api/app/endpoints/reports/reports.service';
 import { CallerFacingError } from '@ghostfolio/api/errors/caller-facing.error';
 import {
   transformDataSourceInRequest,
@@ -23,10 +25,16 @@ import { z } from 'zod';
 import {
   GET_ACCOUNTS_PARAMETERS,
   GET_ACTIVITIES_PARAMETERS,
+  GET_DECISION_ANSWERS_PARAMETERS,
   GET_PERFORMANCE_PARAMETERS,
+  GET_REPORT_PARAMETERS,
+  GET_REPORTS_PARAMETERS,
   IMPORT_ACTIVITIES_PARAMETERS,
+  PUBLISH_REPORT_PARAMETERS,
   SEARCH_ASSET_PROFILES_PARAMETERS,
-  UPDATE_ACCOUNT_BALANCE_PARAMETERS
+  SEND_NOTIFICATION_PARAMETERS,
+  UPDATE_ACCOUNT_BALANCE_PARAMETERS,
+  UPDATE_REPORT_PARAMETERS
 } from './mcp.schemas';
 
 @Injectable()
@@ -38,6 +46,8 @@ export class McpService {
     private readonly configurationService: ConfigurationService,
     private readonly importService: ImportService,
     private readonly portfolioTableService: PortfolioTableService,
+    private readonly pushService: PushService,
+    private readonly reportsService: ReportsService,
     private readonly symbolProfileService: SymbolProfileService,
     private readonly symbolService: SymbolService,
     private readonly userService: UserService
@@ -139,6 +149,32 @@ export class McpService {
     );
   }
 
+  public async getDecisionAnswers({
+    since,
+    userId
+  }: z.infer<typeof GET_DECISION_ANSWERS_PARAMETERS> & { userId: string }) {
+    this.assertReportsEnabled();
+
+    const decisions = await this.reportsService.getDecisions({
+      userId,
+      since: since ? new Date(since) : undefined,
+      status: 'DECIDED'
+    });
+
+    return this.getJsonResult({ decisions });
+  }
+
+  public async getOpenDecisions({ userId }: { userId: string }) {
+    this.assertReportsEnabled();
+
+    const decisions = await this.reportsService.getDecisions({
+      userId,
+      status: 'OPEN'
+    });
+
+    return this.getJsonResult({ decisions });
+  }
+
   public async getPerformance({
     accountIds,
     assetClasses,
@@ -184,6 +220,34 @@ export class McpService {
     });
 
     return this.getTextResult(table);
+  }
+
+  public async getReport({
+    id,
+    userId
+  }: z.infer<typeof GET_REPORT_PARAMETERS> & { userId: string }) {
+    this.assertReportsEnabled();
+
+    const report = await this.reportsService.getReport({ id, userId });
+
+    if (!report) {
+      throw new CallerFacingError(
+        'The report does not exist. Use get-reports to get the identifier of the report.'
+      );
+    }
+
+    return this.getJsonResult(report);
+  }
+
+  public async getReports({
+    userId,
+    ...parameters
+  }: z.infer<typeof GET_REPORTS_PARAMETERS> & { userId: string }) {
+    this.assertReportsEnabled();
+
+    return this.getJsonResult(
+      await this.reportsService.getReports({ ...parameters, userId })
+    );
   }
 
   public async getWatchlist({ userId }: { userId: string }) {
@@ -234,6 +298,25 @@ export class McpService {
     return this.getTextResult(text);
   }
 
+  public async publishReport({
+    userId,
+    ...parameters
+  }: z.infer<typeof PUBLISH_REPORT_PARAMETERS> & { userId: string }) {
+    this.assertReportsEnabled();
+
+    await this.getUserWithPermission({
+      userId,
+      permission: permissions.createReport
+    });
+
+    const report = await this.reportsService.createReport({
+      userId,
+      data: parameters
+    });
+
+    return this.getJsonResult(report);
+  }
+
   public async searchAssetProfiles({
     query,
     userId
@@ -278,6 +361,28 @@ export class McpService {
     return this.getTextResult(JSON.stringify({ assetProfiles }, null, 2));
   }
 
+  public async sendNotification({
+    body,
+    title,
+    url,
+    userId
+  }: z.infer<typeof SEND_NOTIFICATION_PARAMETERS> & { userId: string }) {
+    if (!this.pushService.isConfigured()) {
+      throw new CallerFacingError(
+        'The notifications are not configured on this instance'
+      );
+    }
+
+    const deliveries = await this.pushService.sendToUser({
+      userId,
+      notification: { body, title, url }
+    });
+
+    return this.getTextResult(
+      `Sent the notification to ${deliveries} device(s)`
+    );
+  }
+
   public async updateAccountBalance({
     accountId,
     balance,
@@ -314,6 +419,60 @@ export class McpService {
     );
   }
 
+  public async updateReport({
+    decisions,
+    id,
+    userId,
+    ...data
+  }: z.infer<typeof UPDATE_REPORT_PARAMETERS> & { userId: string }) {
+    this.assertReportsEnabled();
+
+    await this.getUserWithPermission({
+      userId,
+      permission: permissions.updateReport
+    });
+
+    const report = await this.reportsService.updateReport({
+      data,
+      id,
+      userId
+    });
+
+    if (!report) {
+      throw new CallerFacingError(
+        'The report does not exist. Use get-reports to get the identifier of the report.'
+      );
+    }
+
+    for (const { id: decisionId, status } of decisions ?? []) {
+      const isOfReport = report.decisions.some(({ id: idOfDecision }) => {
+        return idOfDecision === decisionId;
+      });
+
+      if (!isOfReport) {
+        throw new CallerFacingError(
+          `The decision ${decisionId} does not belong to the report`
+        );
+      }
+
+      await this.reportsService.setDecisionStatus({
+        status,
+        userId,
+        id: decisionId
+      });
+    }
+
+    return this.getJsonResult(
+      await this.reportsService.getReport({ id, userId })
+    );
+  }
+
+  private assertReportsEnabled() {
+    if (!this.configurationService.get('ENABLE_FEATURE_REPORTS')) {
+      throw new CallerFacingError('The reports are disabled on this instance');
+    }
+  }
+
   private getHoldingFilterParameters({
     holding
   }: Pick<z.infer<typeof GET_ACCOUNTS_PARAMETERS>, 'holding'>) {
@@ -324,6 +483,10 @@ export class McpService {
       }),
       filterBySymbol: holding?.symbol
     };
+  }
+
+  private getJsonResult(value: unknown) {
+    return this.getTextResult(JSON.stringify(value, null, 2));
   }
 
   private getTextResult(text: string) {

@@ -1,4 +1,5 @@
 import { AccountBalanceDto } from './account-balance.dto';
+import { AnswerDecisionDto } from './answer-decision.dto';
 import { AuthDeviceDto } from './auth-device.dto';
 import { CountryDto } from './country.dto';
 import { CreateAccessDto } from './create-access.dto';
@@ -11,6 +12,18 @@ import { CreateAssetProfileWithMarketDataDto } from './create-asset-profile-with
 import { CreateAssetProfileDto } from './create-asset-profile.dto';
 import { CreateOrderDto } from './create-order.dto';
 import { CreatePlatformDto } from './create-platform.dto';
+import {
+  CreatePushSubscriptionDto,
+  DeletePushSubscriptionDto
+} from './create-push-subscription.dto';
+import {
+  CreateDecisionDto,
+  CreateReportDto,
+  DecisionOptionDto,
+  ReportConceptDto,
+  ReportPointDto,
+  ReportSourceDto
+} from './create-report.dto';
 import { CreateTagDto } from './create-tag.dto';
 import { CreateUserDto } from './create-user.dto';
 import { CreateWatchlistItemDto } from './create-watchlist-item.dto';
@@ -30,10 +43,21 @@ import { UpdateOrderDto } from './update-order.dto';
 import { UpdateOwnAccessTokenDto } from './update-own-access-token.dto';
 import { UpdatePlatformDto } from './update-platform.dto';
 import { UpdatePropertyDto } from './update-property.dto';
+import { UpdateReportDto } from './update-report.dto';
 import { UpdateTagDto } from './update-tag.dto';
 import { UpdateUserSettingDto } from './update-user-setting.dto';
 
 export {
+  AnswerDecisionDto,
+  CreateDecisionDto,
+  CreatePushSubscriptionDto,
+  CreateReportDto,
+  DecisionOptionDto,
+  DeletePushSubscriptionDto,
+  ReportConceptDto,
+  ReportPointDto,
+  ReportSourceDto,
+  UpdateReportDto,
   AccountBalanceDto,
   AuthDeviceDto,
   CountryDto,

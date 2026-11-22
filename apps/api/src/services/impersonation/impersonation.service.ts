@@ -1,3 +1,4 @@
+import { hashMcpToken } from '@ghostfolio/api/helper/mcp-token.helper';
 import { AccessService } from '@ghostfolio/api/services/access/access.service';
 import { ConfigurationService } from '@ghostfolio/api/services/configuration/configuration.service';
 import { PrismaService } from '@ghostfolio/api/services/prisma/prisma.service';
@@ -16,7 +17,7 @@ import type {
 } from '@ghostfolio/common/types';
 
 import { Injectable } from '@nestjs/common';
-import { Access, AccessType } from '@prisma/client';
+import { Access, AccessType, Prisma } from '@prisma/client';
 
 @Injectable()
 export class ImpersonationService {
@@ -68,7 +69,7 @@ export class ImpersonationService {
     const settings = impersonatedUser?.settings?.settings as UserSettings;
 
     return {
-      accessId: impersonationId,
+      accessId: access?.id ?? impersonationId,
       authenticatedUserSubscription: user?.subscription,
       isActive: true,
       // An access which has not been granted explicitly originates from the
@@ -131,8 +132,7 @@ export class ImpersonationService {
     } else if (types?.length) {
       const accessObject = await this.prismaService.access.findFirst({
         where: {
-          id: impersonationId,
-          type: { in: types }
+          OR: this.getConditionsOfCredential({ impersonationId, types })
         }
       });
 
@@ -144,5 +144,49 @@ export class ImpersonationService {
     }
 
     return { userId: null };
+  }
+
+  /**
+   * Gives the conditions which an identifier has to match to be a credential of
+   * one of the types. The credential of an access of the Model Context
+   * Protocol (MCP) is a token, which the database stores as a hash. An access
+   * without a hash is a legacy access whose identifier is the credential,
+   * which only the configuration permits.
+   */
+  private getConditionsOfCredential({
+    impersonationId,
+    types
+  }: {
+    impersonationId: string;
+    types: AccessType[];
+  }): Prisma.AccessWhereInput[] {
+    const conditions: Prisma.AccessWhereInput[] = [];
+    const typesOfIdentifier = types.filter((type) => {
+      return type !== 'MCP';
+    });
+
+    if (typesOfIdentifier.length) {
+      conditions.push({
+        id: impersonationId,
+        type: { in: typesOfIdentifier }
+      });
+    }
+
+    if (types.includes('MCP')) {
+      conditions.push({
+        tokenHash: hashMcpToken(impersonationId),
+        type: 'MCP'
+      });
+
+      if (this.configurationService.get('MCP_ALLOW_LEGACY_TOKENS')) {
+        conditions.push({
+          id: impersonationId,
+          tokenHash: null,
+          type: 'MCP'
+        });
+      }
+    }
+
+    return conditions;
   }
 }

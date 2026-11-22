@@ -23,6 +23,7 @@ model Access {
   lastUsedAt    DateTime?
   scopes        String[]   @default([])
   settings      Json       @default("{}")
+  tokenHash     String?    @unique
   type          AccessType @default(PRIVATE)
   updatedAt     DateTime   @updatedAt
   userId        String
@@ -30,6 +31,68 @@ model Access {
 
   @@index([alias])
   @@index([granteeUserId])
+  @@index([userId])
+}
+
+/// A report which an assistant published for the user, e.g. a brief, an
+/// analysis, a lesson, an allocation proposal or a review
+model Report {
+  charts      Json?
+  concepts    Json       @default("[]")
+  createdAt   DateTime   @default(now())
+  decisions   Decision[]
+  details     String?
+  id          String     @id @default(uuid())
+  kind        ReportKind @default(BRIEF)
+  points      Json       @default("[]")
+  publishedAt DateTime   @default(now())
+  sources     Json       @default("[]")
+  subjects    String[]   @default([])
+  summary     String
+  title       String
+  updatedAt   DateTime   @updatedAt
+  userId      String
+  user        User       @relation(fields: [userId], onDelete: Cascade, references: [id])
+
+  @@index([kind])
+  @@index([userId, publishedAt(sort: Desc)])
+}
+
+/// A question which a report submits to the user. The user answers it in the
+/// application and the assistant reads the answer.
+model Decision {
+  answerOptionId String?
+  answerText     String?
+  createdAt      DateTime       @default(now())
+  decidedAt      DateTime?
+  id             String         @id @default(uuid())
+  options        Json           @default("[]")
+  question       String
+  report         Report         @relation(fields: [reportId], onDelete: Cascade, references: [id])
+  reportId       String
+  status         DecisionStatus @default(OPEN)
+  updatedAt      DateTime       @updatedAt
+  user           User           @relation(fields: [userId], onDelete: Cascade, references: [id])
+  userId         String
+
+  @@index([reportId])
+  @@index([userId, decidedAt])
+  @@index([userId, status])
+}
+
+/// A subscription of a browser to the web push notifications
+model PushSubscription {
+  auth        String
+  createdAt   DateTime @default(now())
+  endpoint    String   @unique
+  id          String   @id @default(uuid())
+  p256dh      String
+  preferences Json     @default("{}")
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], onDelete: Cascade, references: [id])
+  userId      String
+  userAgent   String?
+
   @@index([userId])
 }
 
@@ -311,26 +374,29 @@ model TagsOnAccounts {
 }
 
 model User {
-  accessesGet   Access[]        @relation("accessGet")
-  accessesGive  Access[]        @relation("accessGive")
-  accessToken   String?
-  accounts      Account[]
-  activities    Order[]
-  analytics     Analytics?
-  apiKeys       ApiKey[]
-  authChallenge String?
-  authDevices   AuthDevice[]
-  createdAt     DateTime        @default(now())
-  id            String          @id @default(uuid())
-  provider      Provider        @default(ANONYMOUS)
-  role          Role            @default(USER)
-  settings      Settings?
-  subscriptions Subscription[]
-  tags          Tag[]
-  thirdPartyId  String?
-  updatedAt     DateTime        @updatedAt
-  watchlist     SymbolProfile[] @relation("UserWatchlist")
-  SymbolProfile SymbolProfile[]
+  accessesGet       Access[]           @relation("accessGet")
+  accessesGive      Access[]           @relation("accessGive")
+  accessToken       String?
+  accounts          Account[]
+  activities        Order[]
+  analytics         Analytics?
+  apiKeys           ApiKey[]
+  authChallenge     String?
+  authDevices       AuthDevice[]
+  createdAt         DateTime           @default(now())
+  id                String             @id @default(uuid())
+  provider          Provider           @default(ANONYMOUS)
+  decisions         Decision[]
+  pushSubscriptions PushSubscription[]
+  reports           Report[]
+  role              Role               @default(USER)
+  settings          Settings?
+  subscriptions     Subscription[]
+  tags              Tag[]
+  thirdPartyId      String?
+  updatedAt         DateTime           @updatedAt
+  watchlist         SymbolProfile[]    @relation("UserWatchlist")
+  SymbolProfile     SymbolProfile[]
 
   @@index([accessToken])
   @@index([createdAt])
@@ -402,6 +468,20 @@ enum RequestClient {
   MCP
   SELF_HOSTING
   WEB
+}
+
+enum DecisionStatus {
+  DECIDED
+  DISMISSED
+  OPEN
+}
+
+enum ReportKind {
+  ALLOCATION
+  ANALYSIS
+  BRIEF
+  LESSON
+  REVIEW
 }
 
 enum Role {
