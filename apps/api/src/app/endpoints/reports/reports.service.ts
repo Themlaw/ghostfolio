@@ -108,7 +108,7 @@ export class ReportsService {
             report.decisions.length > 0
               ? `Decision needed: ${report.title}`
               : report.title,
-          url: `/reports/${report.id}`
+          url: `/home/reports/${report.id}`
         }
       });
     }

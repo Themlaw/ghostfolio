@@ -1,3 +1,4 @@
+import { GfPushNotificationsSettingsComponent } from '@ghostfolio/client/components/push-notifications-settings/push-notifications-settings.component';
 import { ImpersonationStorageService } from '@ghostfolio/client/services/impersonation-storage.service';
 import {
   KEY_STAY_SIGNED_IN,
@@ -62,6 +63,7 @@ import { catchError } from 'rxjs/operators';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     GfCurrencySelectorComponent,
+    GfPushNotificationsSettingsComponent,
     GfValueComponent,
     IonIcon,
     MatButtonModule,
@@ -94,6 +96,7 @@ export class GfUserAccountSettingsComponent implements OnInit {
   protected hasImpersonationId: boolean;
   protected hasPermissionToDeleteOwnUser: boolean;
   protected hasPermissionToEnableGhostfolioAi: boolean;
+  protected hasPermissionToReadReport: boolean;
   protected hasPermissionToRequestOwnUserDeletion: boolean;
   protected hasPermissionToUpdateOwnAccessToken: boolean;
   protected hasPermissionToUpdateViewMode: boolean;
@@ -195,6 +198,12 @@ export class GfUserAccountSettingsComponent implements OnInit {
             this.user.permissions,
             permissions.enableGhostfolioAi
           );
+
+          this.hasPermissionToReadReport =
+            hasPermission(
+              this.dataService.fetchInfo().globalPermissions,
+              permissions.enableReports
+            ) && hasPermission(this.user.permissions, permissions.readReport);
 
           this.hasPermissionToRequestOwnUserDeletion = hasPermission(
             this.user.permissions,

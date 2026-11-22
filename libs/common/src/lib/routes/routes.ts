@@ -148,6 +148,19 @@ export const internalRoutes = {
         routerLink: ['/home', 'markets'],
         title: $localize`Markets`
       },
+      reports: {
+        excludeFromAssistant: true,
+        path: 'reports',
+        routerLink: ['/home', 'reports'],
+        subRoutes: {
+          decisions: {
+            path: 'decisions',
+            routerLink: ['/home', 'reports', 'decisions'],
+            title: $localize`Pending Decisions`
+          }
+        },
+        title: $localize`Reports`
+      },
       summary: {
         path: 'summary',
         routerLink: ['/home', 'summary'],

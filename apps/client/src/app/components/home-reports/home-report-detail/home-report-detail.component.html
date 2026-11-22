@@ -1,0 +1,229 @@
+<div class="container">
+  <div class="row">
+    <div class="col-md-10 col-lg-8 offset-md-1 offset-lg-2">
+      <a
+        class="ps-0"
+        mat-button
+        [routerLink]="[
+          '/',
+          ...internalRoutes.home.subRoutes.reports.routerLink
+        ]"
+      >
+        <ion-icon class="me-1" name="arrow-back-outline" />
+        <ng-container i18n>All reports</ng-container>
+      </a>
+
+      @if (hasFailed()) {
+        <p class="mt-3 text-center text-danger" i18n>
+          The report could not be loaded.
+        </p>
+      } @else if (report(); as report) {
+        <p
+          class="align-items-center d-flex gap-2 mb-2 mt-3 text-body-secondary"
+        >
+          <ion-icon [name]="icon()" />
+          <span
+            >{{ kindLabel() }} · {{ report.publishedAt | date: 'fullDate' }} ·
+            {{ report.publishedAt | date: 'shortTime' }}</span
+          >
+        </p>
+        <h1 class="h3 mb-0">{{ report.title }}</h1>
+
+        <mat-card appearance="outlined" class="mt-4">
+          <mat-card-content class="p-3 p-sm-4">
+            <h2 class="h6 mb-1 section-label text-body-secondary" i18n>
+              In brief
+            </h2>
+            <p class="mb-0 summary">{{ report.summary }}</p>
+          </mat-card-content>
+        </mat-card>
+
+        @if (report.points.length > 0) {
+          <h2 class="h5 mb-2 mt-5" i18n>Key points</h2>
+          <ol class="list-unstyled mb-0">
+            @for (point of report.points; track $index) {
+              <li class="d-flex gap-3 point py-3">
+                <i class="dot {{ point.level }}"></i>
+                <div>
+                  <div class="section-label">
+                    {{ getLevelLabel(point.level) }}
+                  </div>
+                  <strong>{{ point.subject }}</strong>
+                  <p class="mb-0 text-body-secondary">{{ point.text }}</p>
+                  @if (point.forYou) {
+                    <p class="mb-0 mt-1">
+                      <strong i18n>For you:</strong> {{ point.forYou }}
+                    </p>
+                  }
+                </div>
+              </li>
+            }
+          </ol>
+        }
+
+        @if (decisions().length > 0) {
+          <h2 class="h5 mb-2 mt-5" i18n>To decide</h2>
+          @for (decision of decisions(); track decision.id) {
+            <gf-decision-card
+              class="mb-3"
+              [decision]="decision"
+              (answered)="onAnswered($event)"
+            />
+          }
+        }
+
+        @if (
+          report.concepts.length > 0 ||
+          report.details ||
+          report.sources.length > 0
+        ) {
+          <h2 class="h5 mb-2 mt-5" i18n>Going further</h2>
+          <mat-accordion multi>
+            @if (report.concepts.length > 0) {
+              <mat-expansion-panel expanded>
+                <mat-expansion-panel-header>
+                  <mat-panel-title>
+                    <ion-icon class="me-2" name="school-outline" />
+                    <ng-container i18n>Understand</ng-container>
+                  </mat-panel-title>
+                </mat-expansion-panel-header>
+                @for (concept of report.concepts; track $index) {
+                  <h3 class="h6 mt-2">{{ concept.name }}</h3>
+                  <div class="section-label" i18n>Definition</div>
+                  <p>{{ concept.definition }}</p>
+                  <div class="section-label" i18n>Worked example</div>
+                  <p>{{ concept.example }}</p>
+                  @if (concept.forYou) {
+                    <div class="section-label" i18n>For you</div>
+                    <p>{{ concept.forYou }}</p>
+                  }
+                }
+              </mat-expansion-panel>
+            }
+            @if (report.details) {
+              <mat-expansion-panel>
+                <mat-expansion-panel-header>
+                  <mat-panel-title>
+                    <ion-icon class="me-2" name="stats-chart-outline" />
+                    <ng-container i18n>Detailed analysis</ng-container>
+                  </mat-panel-title>
+                </mat-expansion-panel-header>
+                <markdown [data]="report.details" />
+              </mat-expansion-panel>
+            }
+            @if (report.sources.length > 0) {
+              <mat-expansion-panel>
+                <mat-expansion-panel-header>
+                  <mat-panel-title>
+                    <ion-icon class="me-2" name="document-text-outline" />
+                    <ng-container i18n>Sources</ng-container>
+                  </mat-panel-title>
+                </mat-expansion-panel-header>
+                <ul class="mb-0">
+                  @for (source of report.sources; track $index) {
+                    <li>
+                      <a
+                        rel="noopener noreferrer"
+                        target="_blank"
+                        [href]="source.url"
+                        >{{ source.title }}</a
+                      >
+                      @if (source.date) {
+                        <span class="text-body-secondary">
+                          · {{ source.date | date: 'mediumDate' }}</span
+                        >
+                      }
+                    </li>
+                  }
+                </ul>
+              </mat-expansion-panel>
+            }
+          </mat-accordion>
+        }
+
+        @if (report.subjects.length > 0) {
+          <h2 class="h5 mb-2 mt-5" i18n>Related topics</h2>
+          <mat-chip-set aria-label="Related topics" i18n-aria-label>
+            @for (subject of report.subjects; track subject) {
+              <mat-chip
+                [queryParams]="{ subject }"
+                [routerLink]="[
+                  '/',
+                  ...internalRoutes.home.subRoutes.reports.routerLink
+                ]"
+                >{{ subject }}</mat-chip
+              >
+            }
+          </mat-chip-set>
+        }
+
+        <nav
+          aria-label="Other reports"
+          class="d-flex flex-wrap gap-3 mt-5"
+          i18n-aria-label
+        >
+          <div class="flex-fill neighbor">
+            @if (newer(); as newer) {
+              <a
+                class="d-block"
+                [routerLink]="[
+                  '/',
+                  ...internalRoutes.home.subRoutes.reports.routerLink,
+                  newer.id
+                ]"
+              >
+                <mat-card appearance="outlined">
+                  <mat-card-content class="p-3">
+                    <span class="d-block small text-body-secondary" i18n
+                      >Previous</span
+                    >
+                    {{ newer.title }}
+                  </mat-card-content>
+                </mat-card>
+              </a>
+            } @else {
+              <mat-card appearance="outlined" class="disabled">
+                <mat-card-content class="p-3">
+                  <span class="d-block small text-body-secondary" i18n
+                    >Previous</span
+                  >
+                  <ng-container i18n>No newer report</ng-container>
+                </mat-card-content>
+              </mat-card>
+            }
+          </div>
+          <div class="flex-fill neighbor text-end">
+            @if (older(); as older) {
+              <a
+                class="d-block"
+                [routerLink]="[
+                  '/',
+                  ...internalRoutes.home.subRoutes.reports.routerLink,
+                  older.id
+                ]"
+              >
+                <mat-card appearance="outlined">
+                  <mat-card-content class="p-3">
+                    <span class="d-block small text-body-secondary" i18n
+                      >Next</span
+                    >
+                    {{ older.title }}
+                  </mat-card-content>
+                </mat-card>
+              </a>
+            } @else {
+              <mat-card appearance="outlined" class="disabled">
+                <mat-card-content class="p-3">
+                  <span class="d-block small text-body-secondary" i18n
+                    >Next</span
+                  >
+                  <ng-container i18n>No older report</ng-container>
+                </mat-card-content>
+              </mat-card>
+            }
+          </div>
+        </nav>
+      }
+    </div>
+  </div>
+</div>

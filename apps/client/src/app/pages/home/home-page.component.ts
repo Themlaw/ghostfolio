@@ -1,11 +1,13 @@
 import { ImpersonationStorageService } from '@ghostfolio/client/services/impersonation-storage.service';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
-import { User } from '@ghostfolio/common/interfaces';
+import { InfoItem, User } from '@ghostfolio/common/interfaces';
+import { hasPermission, permissions } from '@ghostfolio/common/permissions';
 import { internalRoutes } from '@ghostfolio/common/routes/routes';
 import {
   GfPageTabsComponent,
   TabConfiguration
 } from '@ghostfolio/ui/page-tabs';
+import { DataService } from '@ghostfolio/ui/services';
 
 import {
   ChangeDetectionStrategy,
@@ -21,7 +23,8 @@ import {
   analyticsOutline,
   bookmarkOutline,
   newspaperOutline,
-  readerOutline
+  readerOutline,
+  trendingUpOutline
 } from 'ionicons/icons';
 
 @Component({
@@ -34,15 +37,19 @@ import {
 })
 export class GfHomePageComponent implements OnInit {
   public hasImpersonationId: boolean;
+  public info: InfoItem;
   public tabs: TabConfiguration[] = [];
   public user: User;
 
   public constructor(
     private changeDetectorRef: ChangeDetectorRef,
+    private dataService: DataService,
     private destroyRef: DestroyRef,
     private impersonationStorageService: ImpersonationStorageService,
     private userService: UserService
   ) {
+    this.info = this.dataService.fetchInfo();
+
     this.userService.stateChanged
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((state) => {
@@ -71,11 +78,25 @@ export class GfHomePageComponent implements OnInit {
               routerLink: internalRoutes.home.subRoutes.watchlist.routerLink
             },
             {
-              iconName: 'newspaper-outline',
+              iconName: 'trending-up-outline',
               label: internalRoutes.home.subRoutes.markets.title,
               routerLink: internalRoutes.home.subRoutes.markets.routerLink
             }
           ];
+
+          if (
+            hasPermission(
+              this.info?.globalPermissions,
+              permissions.enableReports
+            ) &&
+            hasPermission(this.user.permissions, permissions.readReport)
+          ) {
+            this.tabs.push({
+              iconName: 'newspaper-outline',
+              label: internalRoutes.home.subRoutes.reports.title,
+              routerLink: internalRoutes.home.subRoutes.reports.routerLink
+            });
+          }
         }
 
         this.changeDetectorRef.markForCheck();
@@ -86,7 +107,8 @@ export class GfHomePageComponent implements OnInit {
       analyticsOutline,
       bookmarkOutline,
       newspaperOutline,
-      readerOutline
+      readerOutline,
+      trendingUpOutline
     });
   }
 

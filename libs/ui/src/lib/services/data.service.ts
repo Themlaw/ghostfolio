@@ -1,13 +1,16 @@
 import {
+  AnswerDecisionDto,
   CreateAccessDto,
   CreateAccountBalanceDto,
   CreateAccountDto,
   CreateOrderDto,
   CreatePlatformDto,
+  CreatePushSubscriptionDto,
   CreateTagDto,
   CreateUserDto,
   CreateWatchlistItemDto,
   DeleteOwnUserDto,
+  DeletePushSubscriptionDto,
   TransferBalanceDto,
   UpdateAccessDto,
   UpdateAccountDto,
@@ -42,6 +45,8 @@ import {
   CreateActivityResponse,
   CreateStripeCheckoutSessionResponse,
   DataProviderHealthResponse,
+  DecisionItem,
+  DecisionsResponse,
   DeleteOrUpdateActivityResponse,
   ExportResponse,
   Filter,
@@ -61,9 +66,12 @@ import {
   PortfolioReportResponse,
   PublicPortfolioResponse,
   RedeemCouponResponse,
+  ReportResponse,
+  ReportsResponse,
   SymbolResponse,
   User,
   UserItem,
+  VapidPublicKeyResponse,
   WatchlistResponse
 } from '@ghostfolio/common/interfaces';
 import { filterGlobalPermissions } from '@ghostfolio/common/permissions';
@@ -378,6 +386,12 @@ export class DataService {
 
   public deleteUser(aId: string) {
     return this.http.delete<void>(`/api/v1/users/${aId}`);
+  }
+
+  public deletePushSubscription(subscription: DeletePushSubscriptionDto) {
+    return this.http.delete<void>('/api/v1/push-subscriptions', {
+      body: subscription
+    });
   }
 
   public deleteWatchlistItem({ dataSource, symbol }: AssetProfileIdentifier) {
@@ -862,6 +876,71 @@ export class DataService {
     return this.http.get<TagWithAccountAndActivityCount[]>('/api/v1/tags');
   }
 
+  public fetchDecisions({
+    since,
+    status
+  }: { since?: string; status?: 'DECIDED' | 'DISMISSED' | 'OPEN' } = {}) {
+    let params = new HttpParams();
+
+    if (since) {
+      params = params.append('since', since);
+    }
+
+    if (status) {
+      params = params.append('status', status);
+    }
+
+    return this.http.get<DecisionsResponse>('/api/v1/decisions', { params });
+  }
+
+  public fetchReport(id: string) {
+    return this.http.get<ReportResponse>(`/api/v1/reports/${id}`);
+  }
+
+  public fetchReports({
+    kind,
+    q,
+    skip,
+    subject,
+    take
+  }: {
+    kind?: string;
+    q?: string;
+    skip?: number;
+    subject?: string;
+    take?: number;
+  } = {}) {
+    let params = new HttpParams();
+
+    if (kind) {
+      params = params.append('kind', kind);
+    }
+
+    if (q) {
+      params = params.append('q', q);
+    }
+
+    if (skip) {
+      params = params.append('skip', skip);
+    }
+
+    if (subject) {
+      params = params.append('subject', subject);
+    }
+
+    if (take) {
+      params = params.append('take', take);
+    }
+
+    return this.http.get<ReportsResponse>('/api/v1/reports', { params });
+  }
+
+  public fetchVapidPublicKey() {
+    return this.http.get<VapidPublicKeyResponse>(
+      '/api/v1/push/vapid-public-key'
+    );
+  }
+
   public fetchWatchlist() {
     return this.http.get<WatchlistResponse>('/api/v1/watchlist');
   }
@@ -932,6 +1011,36 @@ export class DataService {
 
   public postTag(aTag: CreateTagDto) {
     return this.http.post<Tag>(`/api/v1/tags`, aTag);
+  }
+
+  public patchDecision({
+    id,
+    status
+  }: {
+    id: string;
+    status: 'DISMISSED' | 'OPEN';
+  }) {
+    return this.http.patch<DecisionItem>(`/api/v1/decisions/${id}`, {
+      status
+    });
+  }
+
+  public postDecisionAnswer({
+    id,
+    optionId,
+    text
+  }: AnswerDecisionDto & { id: string }) {
+    return this.http.post<DecisionItem>(`/api/v1/decisions/${id}/answer`, {
+      optionId,
+      text
+    });
+  }
+
+  public postPushSubscription(subscription: CreatePushSubscriptionDto) {
+    return this.http.post<{ id: string }>(
+      '/api/v1/push-subscriptions',
+      subscription
+    );
   }
 
   public postUser(aData: CreateUserDto) {

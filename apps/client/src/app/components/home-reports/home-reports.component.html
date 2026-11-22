@@ -1,0 +1,208 @@
+<div class="container">
+  <h1 class="d-none d-sm-block h3 mb-4 text-center" i18n>Reports</h1>
+  <div class="row">
+    <div class="col-md-10 offset-md-1">
+      @if (openDecisions().length > 0) {
+        <a
+          class="d-block mb-3 text-decoration-none"
+          [routerLink]="
+            internalRoutes.home.subRoutes.reports.subRoutes.decisions.routerLink
+          "
+        >
+          <mat-card appearance="outlined">
+            <mat-card-content class="align-items-center d-flex gap-3 p-3">
+              <span class="icon-circle">
+                <ion-icon name="help-circle-outline" />
+              </span>
+              <span class="flex-grow-1 text-truncate">
+                <strong class="d-block" i18n>{openDecisions().length, plural,
+                  =1 {1 pending decision}
+                  other {{{ openDecisions().length }} pending decisions}
+                }</strong>
+                <span class="text-body-secondary text-truncate">{{
+                  openDecisions()[0].question
+                }}</span>
+              </span>
+              <span class="d-none d-sm-inline-flex" i18n>Answer</span>
+              <ion-icon name="chevron-forward-outline" />
+            </mat-card-content>
+          </mat-card>
+        </a>
+      }
+
+      @if (shouldShowPushBanner()) {
+        <mat-card appearance="outlined" class="mb-3" role="region">
+          <mat-card-content
+            class="align-items-center d-flex flex-wrap gap-3 p-3"
+          >
+            <span class="icon-circle">
+              <ion-icon name="notifications-outline" />
+            </span>
+            <span class="flex-grow-1">
+              <strong class="d-block" i18n
+                >Enable notifications to receive important reports</strong
+              >
+              <span class="text-body-secondary" i18n
+                >You can change this at any time in the settings.</span
+              >
+            </span>
+            <button
+              i18n
+              mat-button
+              type="button"
+              (click)="pushNotificationService.dismissBanner()"
+            >
+              Later
+            </button>
+            <button
+              color="primary"
+              i18n
+              mat-flat-button
+              type="button"
+              [disabled]="pushNotificationService.isBusy()"
+              (click)="onEnablePush()"
+            >
+              Enable
+            </button>
+          </mat-card-content>
+        </mat-card>
+      }
+
+      <div class="align-items-center d-flex flex-wrap gap-3 mb-3">
+        <mat-chip-listbox
+          aria-label="Filter by type"
+          class="flex-grow-1"
+          i18n-aria-label
+          [value]="kind()"
+          (change)="onChangeKind($event.value)"
+        >
+          @for (item of kinds; track item.kind) {
+            <mat-chip-option [value]="item.kind">{{
+              item.label
+            }}</mat-chip-option>
+          }
+        </mat-chip-listbox>
+        <mat-form-field appearance="outline" class="search without-hint">
+          <ion-icon matIconPrefix name="search-outline" />
+          <input
+            i18n-placeholder
+            matInput
+            placeholder="Search"
+            type="search"
+            [formControl]="searchControl"
+          />
+        </mat-form-field>
+      </div>
+
+      @if (subject()) {
+        <mat-chip-set class="mb-3">
+          <mat-chip-row (removed)="onClearSubject()">
+            <ng-container i18n>Topic:</ng-container> {{ subject() }}
+            <button
+              aria-label="Remove filter"
+              i18n-aria-label
+              matChipRemove
+              type="button"
+            >
+              <ion-icon name="close-outline" />
+            </button>
+          </mat-chip-row>
+        </mat-chip-set>
+      }
+
+      @if (hasFailed()) {
+        <p class="text-center text-danger" i18n>
+          The reports could not be loaded.
+        </p>
+      } @else if (!isLoading() && reports().length === 0) {
+        <p class="text-body-secondary text-center" i18n>No reports found.</p>
+      }
+
+      @for (group of groups(); track group.key) {
+        <h2 class="group-title h6 mb-2 mt-4 text-body-secondary">
+          {{ group.date | date: 'fullDate' }}
+        </h2>
+        <mat-card appearance="outlined" class="overflow-hidden">
+          @for (report of group.reports; track report.id) {
+            <a
+              class="d-block item text-decoration-none"
+              [class.featured]="report.kind === 'BRIEF'"
+              [routerLink]="[
+                '/',
+                ...internalRoutes.home.subRoutes.reports.routerLink,
+                report.id
+              ]"
+            >
+              <div class="align-items-center d-flex gap-3">
+                <span class="icon-circle">
+                  <ion-icon [name]="getIcon(report)" />
+                </span>
+                <span class="flex-grow-1 min-w-0">
+                  <span class="d-block small text-body-secondary"
+                    >{{ getKindLabel(report) }} ·
+                    {{ report.publishedAt | date: 'shortTime' }}</span
+                  >
+                  <span class="d-block fw-bold title">{{ report.title }}</span>
+                  @if (report.kind === 'BRIEF') {
+                    <span class="d-block mt-1">{{ report.summary }}</span>
+                    <span
+                      class="d-flex flex-wrap gap-3 levels mt-2 small text-body-secondary"
+                    >
+                      @if (getLevelCount(report, 'important')) {
+                        <span
+                          ><i class="dot important"></i>
+                          <ng-container i18n
+                            >{{
+                              getLevelCount(report, 'important')
+                            }}
+                            important</ng-container
+                          ></span
+                        >
+                      }
+                      @if (getLevelCount(report, 'note')) {
+                        <span
+                          ><i class="dot note"></i>
+                          <ng-container i18n
+                            >{{ getLevelCount(report, 'note') }} to
+                            note</ng-container
+                          ></span
+                        >
+                      }
+                      @if (getLevelCount(report, 'info')) {
+                        <span
+                          ><i class="dot info"></i>
+                          <ng-container i18n
+                            >{{ getLevelCount(report, 'info') }} for
+                            info</ng-container
+                          ></span
+                        >
+                      }
+                    </span>
+                  }
+                </span>
+                <ion-icon
+                  class="text-body-secondary"
+                  name="chevron-forward-outline"
+                />
+              </div>
+            </a>
+          }
+        </mat-card>
+      }
+
+      @if (canLoadMore()) {
+        <div class="d-flex justify-content-center mt-4">
+          <button
+            i18n
+            mat-stroked-button
+            type="button"
+            [disabled]="isLoading()"
+            (click)="onLoadMore()"
+          >
+            Show earlier reports
+          </button>
+        </div>
+      }
+    </div>
+  </div>
+</div>
