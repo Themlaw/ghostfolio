@@ -1,0 +1,17 @@
+# Bloc à ajouter à votre Caddyfile (Caddy sur l'hôte ou dans un autre conteneur).
+# Remplacez le domaine. Caddy obtient et renouvelle le certificat HTTPS tout seul.
+#
+# - Caddy sur l'hôte        : reverse_proxy 127.0.0.1:3333
+# - Caddy dans Docker       : rejoignez le réseau « ghostfolio_web » puis
+#                             reverse_proxy ghostfolio:3333
+# - Caddy sur une autre VM  : GHOSTFOLIO_BIND=<ip du LAN> dans .env, puis
+#                             reverse_proxy <ip>:3333
+#
+# Pas de forward_auth / basicauth ici : Ghostfolio gère l'authentification
+# (OIDC Authentik + JWT) et claude.ai doit pouvoir joindre /mcp et /api/v1/oauth/*.
+ghostfolio.example.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:3333 {
+		health_uri /api/v1/health
+	}
+}

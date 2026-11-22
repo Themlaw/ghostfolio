@@ -1,0 +1,135 @@
+# Ghostfolio (fork « copilote ») pour homelab
+#
+# Utilisation : voir docs/deploy-homelab.md
+#   cd deploy/homelab && ./init-secrets.sh, puis éditer .env
+#   docker compose up -d
+#
+# Variantes d'exposition (au choix) :
+#   - reverse proxy sur l'hôte (Caddy, nginx...) : port 127.0.0.1:3333 (défaut)
+#   - Traefik dans Docker : -f docker-compose.yml -f docker-compose.traefik.yml
+#   - Cloudflare Tunnel   : docker compose --profile cloudflare up -d
+# Build local au lieu de l'image GHCR :
+#   -f docker-compose.yml -f docker-compose.build.yml
+
+name: ghostfolio
+
+services:
+  ghostfolio:
+    image: ${GHOSTFOLIO_IMAGE:-ghcr.io/themlaw/ghostfolio:copilote}
+    container_name: ghostfolio
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 1m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    # Seul port publié de la pile. Par défaut lié à la boucle locale : un
+    # reverse proxy de l'hôte peut l'atteindre, pas le reste du réseau.
+    # GHOSTFOLIO_BIND=0.0.0.0 (ou l'IP du LAN) si le proxy est sur une autre machine.
+    ports:
+      - ${GHOSTFOLIO_BIND:-127.0.0.1}:${GHOSTFOLIO_PORT:-3333}:3333
+    networks:
+      - backend
+      - web
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -f http://localhost:3333/api/v1/health']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      # Les migrations Prisma tournent au démarrage (entrypoint.sh)
+      start_period: 90s
+
+  postgres:
+    image: docker.io/library/postgres:15-alpine
+    container_name: gf-postgres
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_READ_SEARCH
+      - FOWNER
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    networks:
+      - backend
+    healthcheck:
+      test:
+        ['CMD-SHELL', 'pg_isready -d "$${POSTGRES_DB}" -U "$${POSTGRES_USER}"']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres:/var/lib/postgresql/data
+
+  redis:
+    image: docker.io/library/redis:8-alpine
+    container_name: gf-redis
+    restart: unless-stopped
+    user: '999:1000'
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    networks:
+      - backend
+    command:
+      - /bin/sh
+      - -c
+      - redis-server --requirepass "$${REDIS_PASSWORD:?REDIS_PASSWORD variable is not set}"
+    healthcheck:
+      test:
+        ['CMD-SHELL', 'redis-cli --pass "$${REDIS_PASSWORD}" ping | grep PONG']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Variante Cloudflare Tunnel : démarré seulement avec --profile cloudflare.
+  # Aucun port à ouvrir sur la box ; le tunnel sort vers Cloudflare.
+  # Dans le tableau Zero Trust, la cible du « public hostname » est
+  # http://ghostfolio:3333
+  cloudflared:
+    profiles:
+      - cloudflare
+    image: docker.io/cloudflare/cloudflared:latest
+    container_name: gf-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    # Jeton du tunnel (TUNNEL_TOKEN=...) dans .env.cloudflare, hors de .env
+    env_file:
+      - path: .env.cloudflare
+        required: false
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - web
+    depends_on:
+      ghostfolio:
+        condition: service_healthy
+
+networks:
+  # Base de données et cache : aucun accès à Internet ni à l'hôte
+  backend:
+    internal: true
+  # Réseau avec sortie Internet (cours de bourse, découverte OIDC) ; c'est aussi
+  # celui que rejoignent le reverse proxy ou cloudflared
+  web:
+
+volumes:
+  postgres:

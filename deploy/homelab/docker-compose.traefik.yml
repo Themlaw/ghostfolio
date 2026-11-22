@@ -1,0 +1,25 @@
+# Variante Traefik (Traefik tourne déjà dans Docker, avec un réseau partagé) :
+#   docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d
+#
+# À adapter : nom du réseau de Traefik (PROXY_NETWORK), entrypoint « websecure »
+# et resolver de certificats (TRAEFIK_CERTRESOLVER) selon votre installation.
+# IMPORTANT : ne mettez PAS de middleware d'authentification (forward-auth
+# Authentik, basic auth...) sur ce routeur, sinon claude.ai ne pourra pas
+# atteindre /mcp ni /api/v1/oauth/*. Ghostfolio a sa propre authentification.
+services:
+  ghostfolio:
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${PROXY_NETWORK:-proxy}
+      - traefik.http.routers.ghostfolio.rule=Host(`${GHOSTFOLIO_DOMAIN:?GHOSTFOLIO_DOMAIN n'est pas défini dans .env}`)
+      - traefik.http.routers.ghostfolio.entrypoints=websecure
+      - traefik.http.routers.ghostfolio.tls=true
+      - traefik.http.routers.ghostfolio.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}
+      - traefik.http.services.ghostfolio.loadbalancer.server.port=3333
+
+networks:
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:-proxy}

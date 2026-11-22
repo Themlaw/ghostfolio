@@ -1,0 +1,9 @@
+# Build local de l'image au lieu de tirer celle de GHCR :
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+# (la machine doit pouvoir compiler Ghostfolio : plusieurs Go de RAM, 10 à 20 min)
+services:
+  ghostfolio:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: ghostfolio-copilote:local
