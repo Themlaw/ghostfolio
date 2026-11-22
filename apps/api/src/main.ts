@@ -1,3 +1,4 @@
+import { OAuthService } from '@ghostfolio/api/app/endpoints/oauth/oauth.service';
 import { isValidMcpOAuthIssuerUrl } from '@ghostfolio/api/helper/mcp-oauth.helper';
 import { getHelmetOptions } from '@ghostfolio/api/helper/security-headers.helper';
 import { languageRedirectMiddleware } from '@ghostfolio/api/middlewares/language-redirect.middleware';
@@ -174,6 +175,7 @@ async function bootstrap() {
       createMcpAuthorizationMiddleware({
         configurationService,
         impersonationService: app.get(ImpersonationService),
+        oauthService: app.get(OAuthService),
         userService: app.get(UserService)
       })
     );

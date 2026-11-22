@@ -57,27 +57,68 @@ export class ImpersonationService {
       };
     }
 
+    return this.getActiveContext({
+      user,
+      accessId: access?.id ?? impersonationId,
+      // An access which has not been granted explicitly originates from the
+      // permission to impersonate all users
+      scopes: access
+        ? getScopesOfAccess(access)
+        : getScopesOfUnrestrictedImpersonation(),
+      userId: impersonatedUserId
+    });
+  }
+
+  /**
+   * Gives the context of an authorization which the user granted to a client
+   * via OAuth. The scopes are limited to the ones of an access of the Model
+   * Context Protocol (MCP), hence the context is as restricted as with such an
+   * access.
+   */
+  public async resolveOAuthGrant({
+    grantId,
+    scopes: scopesOfGrant,
+    userId
+  }: {
+    grantId: string;
+    scopes: string[];
+    userId: string;
+  }): Promise<ImpersonationContext> {
+    return this.getActiveContext({
+      accessId: grantId,
+      scopes: getScopesOfAccess({ scopes: scopesOfGrant, type: 'MCP' }),
+      userId
+    });
+  }
+
+  private async getActiveContext({
+    accessId,
+    scopes: scopesOfContext,
+    user,
+    userId
+  }: {
+    accessId: string;
+    scopes: string[];
+    user?: UserWithSettings;
+    userId: string;
+  }): Promise<ImpersonationContext> {
     const isSubscriptionEnabled = this.configurationService.get(
       'ENABLE_FEATURE_SUBSCRIPTION'
     );
 
     const impersonatedUser = await this.prismaService.user.findUnique({
       include: { settings: true, subscriptions: isSubscriptionEnabled },
-      where: { id: impersonatedUserId }
+      where: { id: userId }
     });
 
     const settings = impersonatedUser?.settings?.settings as UserSettings;
 
     return {
-      accessId: access?.id ?? impersonationId,
+      accessId,
       authenticatedUserSubscription: user?.subscription,
       isActive: true,
-      // An access which has not been granted explicitly originates from the
-      // permission to impersonate all users
-      scopes: access
-        ? getScopesOfAccess(access)
-        : getScopesOfUnrestrictedImpersonation(),
-      userId: impersonatedUserId,
+      userId,
+      scopes: scopesOfContext,
       userSettings: {
         ...(settings ?? {}),
         baseCurrency: settings?.baseCurrency ?? DEFAULT_CURRENCY

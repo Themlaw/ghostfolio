@@ -1,0 +1,104 @@
+<div class="container">
+  <div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+      @switch (state) {
+        @case ('LOADING') {
+          <div class="d-flex justify-content-center">
+            <mat-spinner [diameter]="20" />
+          </div>
+        }
+        @case ('SIGNED_OUT') {
+          <h1 class="h5 text-center" i18n>
+            Sign in to Ghostfolio to authorize the access
+          </h1>
+          <p class="text-body-secondary text-center" i18n>
+            After signing in, start the connection again from the application
+            which asked for the access.
+          </p>
+          <div class="d-flex justify-content-center">
+            <button color="primary" mat-flat-button (click)="onSignIn()">
+              <ng-container i18n>Sign in</ng-container>
+            </button>
+          </div>
+        }
+        @case ('ERROR') {
+          <h1 class="h5 text-center" i18n>
+            Oops, the request for access is invalid or has expired.
+          </h1>
+          <p class="text-body-secondary text-center" i18n>
+            Start the connection again from the application which asked for the
+            access.
+          </p>
+          <div class="d-flex justify-content-center">
+            <button mat-stroked-button (click)="onGoToHome()">
+              <ng-container i18n>Go back to Home Page</ng-container>
+            </button>
+          </div>
+        }
+        @default {
+          @if (description) {
+            <h1 class="h5 mb-3 text-center">
+              <ng-container i18n>Authorize</ng-container>
+              <strong class="client-name">{{ description.clientName }}</strong>
+              <ng-container i18n>to access your Ghostfolio?</ng-container>
+            </h1>
+            <p class="text-body-secondary text-center">
+              <ng-container i18n>The application redirects to</ng-container>
+              <code>{{ description.redirectHost }}</code>
+            </p>
+
+            <div class="mb-3">
+              <mat-checkbox
+                [checked]="isReadOnly"
+                [disabled]="!canWrite || state === 'SUBMITTING'"
+                (change)="isReadOnly = $event.checked"
+              >
+                <ng-container i18n>Read-only</ng-container>
+              </mat-checkbox>
+              @if (canWrite) {
+                <div class="small text-body-secondary" i18n>
+                  Without this option, the application may also create reports,
+                  create activities, update account balances and send
+                  notifications.
+                </div>
+              }
+            </div>
+
+            <div class="mb-4">
+              <div class="fw-bold" i18n>Permissions</div>
+              <ul class="mb-0">
+                @for (scope of grantedScopes; track scope) {
+                  <li>
+                    <code>{{ scope }}</code>
+                  </li>
+                }
+              </ul>
+            </div>
+
+            <div class="actions d-flex justify-content-end">
+              <button
+                class="me-2"
+                mat-stroked-button
+                [disabled]="state === 'SUBMITTING'"
+                (click)="onDeny()"
+              >
+                <ng-container i18n>Deny</ng-container>
+              </button>
+              <button
+                color="primary"
+                mat-flat-button
+                [disabled]="state === 'SUBMITTING'"
+                (click)="onApprove()"
+              >
+                <ng-container i18n>Authorize</ng-container>
+              </button>
+            </div>
+            <p class="mt-4 small text-body-secondary" i18n>
+              You can revoke the access at any time.
+            </p>
+          }
+        }
+      }
+    </div>
+  </div>
+</div>

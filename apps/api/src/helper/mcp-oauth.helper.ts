@@ -1,5 +1,6 @@
 import { ConfigurationService } from '@ghostfolio/api/services/configuration/configuration.service';
 import { MCP_ENDPOINT } from '@ghostfolio/common/config';
+import { getScopesOfAccess, scopes } from '@ghostfolio/common/scopes';
 
 import {
   getOAuthProtectedResourceMetadataUrl,
@@ -16,12 +17,15 @@ export function getMcpAuthorizationServerMetadata(
   const rootUrl = getMcpOAuthBaseUrl(configurationService);
 
   return {
-    authorization_endpoint: `${rootUrl}/oauth/authorize`,
-    client_id_metadata_document_supported: true,
+    authorization_endpoint: `${rootUrl}/api/v1/oauth/authorize`,
     code_challenge_methods_supported: ['S256'],
     grant_types_supported: ['authorization_code', 'refresh_token'],
     issuer: rootUrl,
+    registration_endpoint: `${rootUrl}/api/v1/oauth/register`,
     response_types_supported: ['code'],
+    revocation_endpoint: `${rootUrl}/api/v1/oauth/revoke`,
+    revocation_endpoint_auth_methods_supported: ['none'],
+    scopes_supported: getScopesSupportedByMcp(),
     token_endpoint: `${rootUrl}/api/v1/oauth/token`,
     token_endpoint_auth_methods_supported: ['none']
   };
@@ -33,6 +37,25 @@ export function getMcpAuthorizationServerMetadata(
  */
 export function getMcpOAuthBaseUrl(configurationService: ConfigurationService) {
   return configurationService.get('ROOT_URL').replace(/\/+$/, '');
+}
+
+/**
+ * Gives the identifier of the protected resource (RFC 8707), which is the URL
+ * of the server of the Model Context Protocol (MCP) and the audience of each
+ * access token
+ */
+export function getMcpResourceIdentifier(
+  configurationService: ConfigurationService
+) {
+  return `${getMcpOAuthBaseUrl(configurationService)}${MCP_ENDPOINT}`;
+}
+
+/**
+ * Gives the scopes which an access token of the server of the Model Context
+ * Protocol (MCP) can carry
+ */
+export function getScopesSupportedByMcp() {
+  return getScopesOfAccess({ scopes: Object.values(scopes), type: 'MCP' });
 }
 
 /**
@@ -52,7 +75,7 @@ export function getMcpProtectedResourceMetadataUrl(
  * resource of the protected resource metadata (RFC 9728)
  */
 export function getMcpResourceUrl(configurationService: ConfigurationService) {
-  return new URL(`${getMcpOAuthBaseUrl(configurationService)}${MCP_ENDPOINT}`);
+  return new URL(getMcpResourceIdentifier(configurationService));
 }
 
 /**

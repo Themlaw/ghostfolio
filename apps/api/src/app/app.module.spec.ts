@@ -75,6 +75,7 @@ const PUBLIC_ROUTES = [
   'GET /info',
   'GET /logo',
   'GET /logo/:dataSource/:symbol',
+  'GET /oauth/authorize',
   'GET /public/:accessId/portfolio',
   'GET /sitemap.xml',
   'GET /subscription/stripe/callback',
@@ -82,6 +83,9 @@ const PUBLIC_ROUTES = [
   'POST /auth/oidc/exchange',
   'POST /auth/webauthn/generate-authentication-options',
   'POST /auth/webauthn/verify-authentication',
+  'POST /oauth/register',
+  'POST /oauth/revoke',
+  'POST /oauth/token',
   'POST /user'
 ];
 

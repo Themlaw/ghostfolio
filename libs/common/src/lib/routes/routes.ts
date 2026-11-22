@@ -174,6 +174,12 @@ export const internalRoutes = {
     routerLink: ['/i18n'],
     title: $localize`Internationalization`
   },
+  oauthConsent: {
+    excludeFromAssistant: true,
+    path: 'oauth/consent',
+    routerLink: ['/oauth', 'consent'],
+    title: $localize`Authorize access`
+  },
   portfolio: {
     path: 'portfolio',
     routerLink: ['/portfolio'],

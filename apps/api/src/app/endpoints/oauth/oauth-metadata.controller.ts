@@ -1,6 +1,7 @@
 import {
   getMcpAuthorizationServerMetadata,
   getMcpResourceUrl,
+  getScopesSupportedByMcp,
   isMcpOAuthEnabled
 } from '@ghostfolio/api/helper/mcp-oauth.helper';
 import { ConfigurationService } from '@ghostfolio/api/services/configuration/configuration.service';
@@ -33,6 +34,7 @@ export class OAuthMetadataController {
         this.configurationService
       ),
       resourceName: 'Ghostfolio',
+      scopesSupported: getScopesSupportedByMcp(),
       resourceServerUrl: getMcpResourceUrl(this.configurationService)
     });
   }

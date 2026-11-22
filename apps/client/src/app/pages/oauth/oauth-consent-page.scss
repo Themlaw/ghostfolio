@@ -1,0 +1,13 @@
+:host {
+  display: block;
+
+  .client-name {
+    margin: 0 0.25rem;
+  }
+
+  .actions button {
+    @media (max-width: 575.98px) {
+      flex: 1;
+    }
+  }
+}
