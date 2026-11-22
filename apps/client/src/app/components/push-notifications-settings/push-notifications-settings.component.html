@@ -1,0 +1,33 @@
+@if (pushNotificationService.isSupported) {
+  <div class="align-items-baseline g-0 mt-4 py-1 row">
+    <div class="col col-sm-6 pe-1">
+      <div i18n>Notifications on this device</div>
+      <div class="hint-text text-body-secondary" i18n>
+        Be notified of important reports and pending decisions. Each device is
+        set separately.
+      </div>
+      @if (pushNotificationService.isDenied()) {
+        <div class="hint-text mt-1 text-danger" i18n>
+          Notifications are blocked in the settings of your browser.
+        </div>
+      } @else if (pushNotificationService.hasFailed()) {
+        <div class="hint-text mt-1 text-danger" i18n>
+          The notifications could not be changed. Please try again later.
+        </div>
+      }
+    </div>
+    <div class="col-auto col-sm-6 ps-1">
+      <mat-slide-toggle
+        color="primary"
+        hideIcon="true"
+        [checked]="pushNotificationService.isSubscribed()"
+        [disabled]="
+          pushNotificationService.isBusy() ||
+          (pushNotificationService.isDenied() &&
+            !pushNotificationService.isSubscribed())
+        "
+        (change)="onChange($event)"
+      />
+    </div>
+  </div>
+}

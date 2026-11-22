@@ -12,6 +12,30 @@ export interface PushNotification {
   url?: string;
 }
 
+export const PUSH_NOTIFICATION_ICON = '/assets/android-chrome-192x192.png';
+
+/**
+ * Builds the payload which the Angular service worker (`SwPush`) expects. A
+ * click on the notification focuses or opens the application at the url.
+ */
+export function buildPushPayload({ body, title, url }: PushNotification) {
+  return {
+    notification: {
+      body,
+      title,
+      data: {
+        onActionClick: {
+          default: {
+            operation: 'navigateLastFocusedOrOpen',
+            url: url ?? '/'
+          }
+        }
+      },
+      icon: PUSH_NOTIFICATION_ICON
+    }
+  };
+}
+
 @Injectable()
 export class PushService {
   public constructor(
@@ -99,7 +123,7 @@ export class PushService {
         where: { userId }
       });
 
-      const payload = JSON.stringify(notification);
+      const payload = JSON.stringify(buildPushPayload(notification));
 
       const results = await Promise.all(
         subscriptions.map(async ({ auth, endpoint, id, p256dh }) => {

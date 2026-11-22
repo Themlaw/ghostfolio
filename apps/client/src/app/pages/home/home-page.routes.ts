@@ -1,5 +1,8 @@
 import { GfHomeHoldingsComponent } from '@ghostfolio/client/components/home-holdings/home-holdings.component';
 import { GfHomeOverviewComponent } from '@ghostfolio/client/components/home-overview/home-overview.component';
+import { GfHomeDecisionsComponent } from '@ghostfolio/client/components/home-reports/home-decisions/home-decisions.component';
+import { GfHomeReportDetailComponent } from '@ghostfolio/client/components/home-reports/home-report-detail/home-report-detail.component';
+import { GfHomeReportsComponent } from '@ghostfolio/client/components/home-reports/home-reports.component';
 import { GfHomeSummaryComponent } from '@ghostfolio/client/components/home-summary/home-summary.component';
 import { GfHomeWatchlistComponent } from '@ghostfolio/client/components/home-watchlist/home-watchlist.component';
 import { GfWatchlistDialogHostComponent } from '@ghostfolio/client/components/home-watchlist/watchlist-dialog-host/watchlist-dialog-host.component';
@@ -23,6 +26,27 @@ export const routes: Routes = [
         path: internalRoutes.home.subRoutes.holdings.path,
         component: GfHomeHoldingsComponent,
         title: internalRoutes.home.subRoutes.holdings.title
+      },
+      {
+        path: internalRoutes.home.subRoutes.reports.path,
+        children: [
+          {
+            path: '',
+            component: GfHomeReportsComponent
+          },
+          {
+            path: internalRoutes.home.subRoutes.reports.subRoutes.decisions
+              .path,
+            component: GfHomeDecisionsComponent,
+            title:
+              internalRoutes.home.subRoutes.reports.subRoutes.decisions.title
+          },
+          {
+            path: ':id',
+            component: GfHomeReportDetailComponent
+          }
+        ],
+        title: internalRoutes.home.subRoutes.reports.title
       },
       {
         path: internalRoutes.home.subRoutes.summary.path,

@@ -1,0 +1,72 @@
+<mat-card appearance="outlined">
+  <mat-card-content class="p-3 p-sm-4">
+    @if (label()) {
+      <div class="mb-1 small text-body-secondary">{{ label() }}</div>
+    }
+    <h3 class="h6 mb-0">{{ decision().question }}</h3>
+
+    @if (decision().status === 'DISMISSED') {
+      <div class="align-items-center d-flex flex-wrap mt-3">
+        <span class="me-3 text-body-secondary" i18n>Dismissed</span>
+        <button i18n mat-button type="button" (click)="onReopen()">
+          Reopen
+        </button>
+      </div>
+    } @else if (isEditing()) {
+      @if (decision().options.length > 0) {
+        <mat-button-toggle-group
+          aria-label="Answer options"
+          class="d-flex flex-wrap my-3"
+          i18n-aria-label
+          [value]="selectedOptionId()"
+          (change)="selectedOptionId.set($event.value)"
+        >
+          @for (option of decision().options; track option.id) {
+            <mat-button-toggle [value]="option.id">{{
+              option.label
+            }}</mat-button-toggle>
+          }
+        </mat-button-toggle-group>
+      }
+      <mat-form-field appearance="outline" class="mt-3 w-100">
+        <mat-label i18n>Specify your answer (optional)</mat-label>
+        <textarea
+          matInput
+          maxlength="4000"
+          rows="3"
+          [value]="text()"
+          (input)="onChangeText($event)"
+        ></textarea>
+      </mat-form-field>
+      <div class="align-items-center d-flex flex-wrap gap-3">
+        <button
+          color="primary"
+          i18n
+          mat-flat-button
+          type="button"
+          [disabled]="!canSubmit() || isSaving()"
+          (click)="onSubmit()"
+        >
+          Confirm
+        </button>
+        @if (hasFailed()) {
+          <span class="small text-danger" i18n
+            >Your answer could not be saved. Please try again.</span
+          >
+        } @else if (!canSubmit()) {
+          <span class="small text-body-secondary" i18n
+            >Choose an option or write an answer to confirm.</span
+          >
+        }
+      </div>
+    } @else {
+      <div class="align-items-start d-flex flex-wrap gap-2 mt-3 rounded status">
+        <span class="flex-grow-1" i18n
+          >Decided on {{ decision().decidedAt | date: 'mediumDate' }} — your
+          answer: {{ answerLabel() }}</span
+        >
+        <button i18n mat-button type="button" (click)="onEdit()">Edit</button>
+      </div>
+    }
+  </mat-card-content>
+</mat-card>

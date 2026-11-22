@@ -298,6 +298,9 @@
           />
         </div>
       </div>
+      @if (hasPermissionToReadReport) {
+        <gf-push-notifications-settings />
+      }
       @if (deviceType() !== 'mobile' && hasPermissionToEnableGhostfolioAi) {
         <div class="align-items-baseline g-0 mt-4 py-1 row">
           <div class="col col-sm-6 pe-1">

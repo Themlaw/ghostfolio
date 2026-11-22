@@ -68,6 +68,7 @@ import type {
   DataProviderResponse,
   DataProviderHistoricalResponse
 } from './responses/data-provider-response.interface';
+import type { DecisionsResponse } from './responses/decisions-response.interface';
 import type { DeleteOrUpdateActivityResponse } from './responses/delete-or-update-activity-response.interface';
 import type { DividendsResponse } from './responses/dividends-response.interface';
 import type { ResponseError } from './responses/errors.interface';
@@ -91,7 +92,18 @@ import type { PortfolioReportResponse } from './responses/portfolio-report.inter
 import type { PublicPortfolioResponse } from './responses/public-portfolio-response.interface';
 import type { QuotesResponse } from './responses/quotes-response.interface';
 import type { RedeemCouponResponse } from './responses/redeem-coupon-response.interface';
+import type {
+  DecisionItem,
+  DecisionOption,
+  ReportConcept,
+  ReportPoint,
+  ReportPointLevel,
+  ReportResponse,
+  ReportSource,
+  ReportsResponse
+} from './responses/report-response.interface';
 import type { SymbolResponse } from './responses/symbol-response.interface';
+import type { VapidPublicKeyResponse } from './responses/vapid-public-key-response.interface';
 import type { WatchlistResponse } from './responses/watchlist-response.interface';
 import type { RuleSettings } from './rule-settings.interface';
 import type { ScraperConfiguration } from './scraper-configuration.interface';
@@ -111,6 +123,15 @@ import type { User } from './user.interface';
 import type { XRayRulesSettings } from './x-ray-rules-settings.interface';
 
 export {
+  DecisionItem,
+  DecisionOption,
+  DecisionsResponse,
+  ReportConcept,
+  ReportPoint,
+  ReportPointLevel,
+  ReportResponse,
+  ReportSource,
+  ReportsResponse,
   Access,
   AccessResponse,
   AccessSettings,
@@ -215,6 +236,7 @@ export {
   User,
   UserItem,
   UserSettings,
+  VapidPublicKeyResponse,
   WatchlistResponse,
   XRayRulesSettings
 };

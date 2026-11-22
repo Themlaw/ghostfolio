@@ -1,0 +1,8 @@
+:host {
+  display: block;
+
+  .status {
+    background-color: rgba(var(--palette-primary-500), 0.16);
+    padding: 0.5rem 0.5rem 0.5rem 1rem;
+  }
+}

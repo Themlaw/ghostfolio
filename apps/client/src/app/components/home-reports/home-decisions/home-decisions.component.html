@@ -1,0 +1,64 @@
+<div class="container">
+  <h1 class="d-none d-sm-block h3 mb-4 text-center" i18n>Pending Decisions</h1>
+  <div class="row">
+    <div class="col-md-10 col-lg-8 offset-md-1 offset-lg-2">
+      <a
+        class="ps-0"
+        mat-button
+        [routerLink]="[
+          '/',
+          ...internalRoutes.home.subRoutes.reports.routerLink
+        ]"
+      >
+        <ion-icon class="me-1" name="arrow-back-outline" />
+        <ng-container i18n>All reports</ng-container>
+      </a>
+
+      @if (hasFailed()) {
+        <p class="mt-3 text-center text-danger" i18n>
+          The decisions could not be loaded.
+        </p>
+      } @else if (!isLoading()) {
+        <p class="mb-4 mt-2 text-body-secondary">
+          @if (openCount() > 0) {
+            <ng-container i18n
+              >{openCount(), plural,
+                =1 {1 decision is waiting for your answer.}
+                other {{{ openCount() }} decisions are waiting for your answer.}
+              }
+              Your assistant reads your answers at the next
+              report.</ng-container
+            >
+          } @else {
+            <ng-container i18n
+              >No decision is waiting for your answer.</ng-container
+            >
+          }
+        </p>
+
+        @for (decision of open(); track decision.id) {
+          <gf-decision-card
+            class="mb-3"
+            [decision]="decision"
+            [label]="decision.report.title"
+            (answered)="onAnsweredOpen($event, decision)"
+          />
+        }
+
+        <h2 class="h6 mb-2 mt-4 text-body-secondary" i18n>Already decided</h2>
+        @for (decision of decided(); track decision.id) {
+          <gf-decision-card
+            class="mb-3"
+            [decision]="decision"
+            [label]="decision.report.title"
+            (answered)="onAnsweredDecided($event, decision)"
+          />
+        } @empty {
+          <p class="text-body-secondary" i18n>
+            None yet. A confirmed decision appears here.
+          </p>
+        }
+      }
+    </div>
+  </div>
+</div>
