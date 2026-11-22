@@ -89,6 +89,16 @@ export const routes: Routes = [
       import('./pages/markets/markets-page.routes').then((m) => m.routes)
   },
   {
+    // The page asks the user for the consent itself, because the user may
+    // not be signed in yet
+    loadComponent: () =>
+      import('./pages/oauth/oauth-consent-page.component').then(
+        (c) => c.GfOauthConsentPageComponent
+      ),
+    path: internalRoutes.oauthConsent.path,
+    title: internalRoutes.oauthConsent.title
+  },
+  {
     path: publicRoutes.openStartup.path,
     loadChildren: () =>
       import('./pages/open/open-page.routes').then((m) => m.routes)

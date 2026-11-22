@@ -34,6 +34,68 @@ model Access {
   @@index([userId])
 }
 
+/// A client which registered itself dynamically (RFC 7591) to ask a user for
+/// the authorization to access the Model Context Protocol (MCP) server
+model OAuthClient {
+  authorizationCodes OAuthAuthorizationCode[]
+  clientName         String
+  createdAt          DateTime                 @default(now())
+  id                 String                   @id @default(uuid())
+  redirectUris       String[]
+  tokens             OAuthToken[]
+}
+
+/// A single-use authorization code. The database stores only its hash.
+model OAuthAuthorizationCode {
+  client        OAuthClient @relation(fields: [clientId], onDelete: Cascade, references: [id])
+  clientId      String
+  codeChallenge String
+  codeHash      String      @unique
+  createdAt     DateTime    @default(now())
+  expiresAt     DateTime
+  id            String      @id @default(uuid())
+  redirectUri   String
+  resource      String
+  scopes        String[]    @default([])
+  usedAt        DateTime?
+  user          User        @relation(fields: [userId], onDelete: Cascade, references: [id])
+  userId        String
+
+  @@index([clientId])
+  @@index([expiresAt])
+  @@index([userId])
+}
+
+/// An access token or a refresh token. The database stores only its hash. The
+/// tokens of one authorization share a family, which is revoked as a whole.
+model OAuthToken {
+  client     OAuthClient    @relation(fields: [clientId], onDelete: Cascade, references: [id])
+  clientId   String
+  createdAt  DateTime       @default(now())
+  expiresAt  DateTime
+  familyId   String
+  hash       String         @unique
+  id         String         @id @default(uuid())
+  lastUsedAt DateTime?
+  resource   String
+  revokedAt  DateTime?
+  scopes     String[]       @default([])
+  type       OAuthTokenType
+  usedAt     DateTime?
+  user       User           @relation(fields: [userId], onDelete: Cascade, references: [id])
+  userId     String
+
+  @@index([clientId])
+  @@index([expiresAt])
+  @@index([familyId])
+  @@index([userId])
+}
+
+enum OAuthTokenType {
+  ACCESS
+  REFRESH
+}
+
 /// A report which an assistant published for the user, e.g. a brief, an
 /// analysis, a lesson, an allocation proposal or a review
 model Report {
@@ -374,29 +436,31 @@ model TagsOnAccounts {
 }
 
 model User {
-  accessesGet       Access[]           @relation("accessGet")
-  accessesGive      Access[]           @relation("accessGive")
-  accessToken       String?
-  accounts          Account[]
-  activities        Order[]
-  analytics         Analytics?
-  apiKeys           ApiKey[]
-  authChallenge     String?
-  authDevices       AuthDevice[]
-  createdAt         DateTime           @default(now())
-  id                String             @id @default(uuid())
-  provider          Provider           @default(ANONYMOUS)
-  decisions         Decision[]
-  pushSubscriptions PushSubscription[]
-  reports           Report[]
-  role              Role               @default(USER)
-  settings          Settings?
-  subscriptions     Subscription[]
-  tags              Tag[]
-  thirdPartyId      String?
-  updatedAt         DateTime           @updatedAt
-  watchlist         SymbolProfile[]    @relation("UserWatchlist")
-  SymbolProfile     SymbolProfile[]
+  accessesGet             Access[]                 @relation("accessGet")
+  accessesGive            Access[]                 @relation("accessGive")
+  accessToken             String?
+  accounts                Account[]
+  activities              Order[]
+  analytics               Analytics?
+  oauthAuthorizationCodes OAuthAuthorizationCode[]
+  oauthTokens             OAuthToken[]
+  apiKeys                 ApiKey[]
+  authChallenge           String?
+  authDevices             AuthDevice[]
+  createdAt               DateTime                 @default(now())
+  id                      String                   @id @default(uuid())
+  provider                Provider                 @default(ANONYMOUS)
+  decisions               Decision[]
+  pushSubscriptions       PushSubscription[]
+  reports                 Report[]
+  role                    Role                     @default(USER)
+  settings                Settings?
+  subscriptions           Subscription[]
+  tags                    Tag[]
+  thirdPartyId            String?
+  updatedAt               DateTime                 @updatedAt
+  watchlist               SymbolProfile[]          @relation("UserWatchlist")
+  SymbolProfile           SymbolProfile[]
 
   @@index([accessToken])
   @@index([createdAt])

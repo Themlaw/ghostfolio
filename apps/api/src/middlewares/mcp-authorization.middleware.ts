@@ -1,8 +1,10 @@
+import type { OAuthService } from '@ghostfolio/api/app/endpoints/oauth/oauth.service';
 import { getAccessIdOfBearerToken } from '@ghostfolio/api/helper/bearer-token.helper';
 import {
   getMcpProtectedResourceMetadataUrl,
   isMcpOAuthEnabled
 } from '@ghostfolio/api/helper/mcp-oauth.helper';
+import { isOAuthAccessToken } from '@ghostfolio/api/helper/oauth-token.helper';
 import { ConfigurationService } from '@ghostfolio/api/services/configuration/configuration.service';
 import { ImpersonationService } from '@ghostfolio/api/services/impersonation/impersonation.service';
 import { UserService } from '@ghostfolio/api/services/user/user.service';
@@ -36,10 +38,12 @@ import { getReasonPhrase, StatusCodes } from 'http-status-codes';
 export function createMcpAuthorizationMiddleware({
   configurationService,
   impersonationService,
+  oauthService,
   userService
 }: {
   configurationService: ConfigurationService;
   impersonationService: ImpersonationService;
+  oauthService?: OAuthService;
   userService: UserService;
 }) {
   return async (
@@ -51,10 +55,26 @@ export function createMcpAuthorizationMiddleware({
       request.headers[HEADER_KEY_TOKEN.toLowerCase()] as string
     );
 
-    const impersonation = await impersonationService.resolve({
-      impersonationId: accessId,
-      types: ['MCP']
-    });
+    // The token of an authorization which the user granted via OAuth is
+    // resolved from its own table. It is never a token of an access, and a
+    // token of an access never reaches this branch.
+    const oauthToken =
+      oauthService &&
+      isOAuthAccessToken(accessId) &&
+      isMcpOAuthEnabled(configurationService)
+        ? await oauthService.resolveAccessToken(accessId as string)
+        : undefined;
+
+    const impersonation = oauthToken
+      ? await impersonationService.resolveOAuthGrant({
+          grantId: oauthToken.familyId,
+          scopes: oauthToken.scopes,
+          userId: oauthToken.userId
+        })
+      : await impersonationService.resolve({
+          impersonationId: accessId,
+          types: ['MCP']
+        });
 
     if (!impersonation.isActive) {
       return sendUnauthorizedResponse({

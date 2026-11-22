@@ -184,6 +184,13 @@ exports[`AppModule should keep the security of each route 1`] = `
     "interceptors": [],
     "permission": "accessAdminControl",
   },
+  "DELETE /oauth/grants/:id": {
+    "guards": [
+      "McpOAuthFeatureGuard",
+      "AuthGuard('jwt')",
+    ],
+    "interceptors": [],
+  },
   "DELETE /platform/:id": {
     "allowDuringImpersonation": true,
     "guards": [
@@ -733,6 +740,28 @@ exports[`AppModule should keep the security of each route 1`] = `
     ],
     "interceptors": [],
     "permission": "readMarketDataOfMarkets",
+  },
+  "GET /oauth/authorize": {
+    "guards": [
+      "McpOAuthFeatureGuard",
+      "CustomThrottlerGuard",
+    ],
+    "interceptors": [],
+  },
+  "GET /oauth/authorize/consent": {
+    "guards": [
+      "McpOAuthFeatureGuard",
+      "AuthGuard('jwt')",
+      "CustomThrottlerGuard",
+    ],
+    "interceptors": [],
+  },
+  "GET /oauth/grants": {
+    "guards": [
+      "McpOAuthFeatureGuard",
+      "AuthGuard('jwt')",
+    ],
+    "interceptors": [],
   },
   "GET /platform": {
     "allowDuringImpersonation": true,
@@ -1398,6 +1427,35 @@ exports[`AppModule should keep the security of each route 1`] = `
     "allowDuringImpersonation": true,
     "guards": [
       "AuthGuard('jwt')",
+    ],
+    "interceptors": [],
+  },
+  "POST /oauth/authorize/consent": {
+    "guards": [
+      "McpOAuthFeatureGuard",
+      "AuthGuard('jwt')",
+      "CustomThrottlerGuard",
+    ],
+    "interceptors": [],
+  },
+  "POST /oauth/register": {
+    "guards": [
+      "McpOAuthFeatureGuard",
+      "CustomThrottlerGuard",
+    ],
+    "interceptors": [],
+  },
+  "POST /oauth/revoke": {
+    "guards": [
+      "McpOAuthFeatureGuard",
+      "CustomThrottlerGuard",
+    ],
+    "interceptors": [],
+  },
+  "POST /oauth/token": {
+    "guards": [
+      "McpOAuthFeatureGuard",
+      "CustomThrottlerGuard",
     ],
     "interceptors": [],
   },

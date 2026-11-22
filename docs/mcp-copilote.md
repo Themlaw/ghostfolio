@@ -39,7 +39,7 @@ Les outils existants sont inchangés (comptes, activités, performance, portefeu
 | Variable                                                 | Défaut  | Rôle                                                                                                                  |
 | -------------------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------- |
 | `ENABLE_FEATURE_MCP`                                     | `false` | Active `/mcp`.                                                                                                        |
-| `ENABLE_FEATURE_MCP_OAUTH`                               | `false` | Annonce les métadonnées OAuth (voir plan : non implémenté).                                                           |
+| `ENABLE_FEATURE_MCP_OAUTH`                               | `false` | Serveur d'autorisation OAuth 2.1 pour `/mcp` (voir plus bas).                                                         |
 | `ENABLE_FEATURE_REPORTS`                                 | `true`  | Rapports et décisions (REST + MCP). Exposé via la permission globale `enableReports` d'`/info`.                       |
 | `MCP_ALLOW_LEGACY_TOKENS`                                | `false` | Accepte les anciens accès MCP par `id`.                                                                               |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | vides   | Notifications web push (`npx web-push generate-vapid-keys` ; sujet `mailto:…`). Sans ces valeurs, l'envoi est ignoré. |
@@ -58,19 +58,53 @@ Modèles Prisma : `Report`, `Decision` (OPEN / DECIDED / DISMISSED, `options` JS
 
 Le client Angular (page Veille, validation des décisions, service worker push) n'est pas implémenté.
 
-## État des métadonnées OAuth
+## Autorisation OAuth 2.1 (connecteur personnalisé)
 
-Avec `ENABLE_FEATURE_MCP_OAUTH=false` (défaut), `/.well-known/oauth-protected-resource/mcp` et `/.well-known/oauth-authorization-server` répondent 404 et le challenge `WWW-Authenticate` ne contient pas `resource_metadata` : rien d'inexistant n'est annoncé. Avec `true`, les métadonnées annoncent `/oauth/authorize` et `/api/v1/oauth/token`, qui n'existent pas encore : **ne pas activer** avant d'avoir implémenté le plan ci-dessous.
+Avec `ENABLE_FEATURE_MCP_OAUTH=true` (et `ENABLE_FEATURE_MCP=true`, `ROOT_URL` en HTTPS), Ghostfolio est un serveur d'autorisation OAuth 2.1 pour `/mcp` (spec MCP Authorization 2025-06-18 / 2025-11-25). Sans le drapeau, tout ce qui suit répond 404, `resource_metadata` n'est pas annoncé et le comportement reste celui des jetons `gfmcp_`.
 
-## Plan : OAuth 2.1 pour MCP (non implémenté)
+### Ajouter Ghostfolio dans claude.ai
 
-Dépend de l'OIDC durci (connexion de l'utilisateur au moment du consentement).
+1. Paramètres, Connecteurs, « Ajouter un connecteur personnalisé » : nom libre, URL `https://<domaine>/mcp` (sans identifiant ni secret).
+2. claude.ai découvre les métadonnées (`WWW-Authenticate` puis `/.well-known/oauth-protected-resource/mcp`), s'enregistre (`POST /api/v1/oauth/register`) et ouvre le navigateur sur `/api/v1/oauth/authorize`.
+3. Ghostfolio redirige vers la page de consentement du client (`/<langue>/oauth/consent`) : connecte-toi si besoin, puis relance la connexion depuis claude.ai (le retour automatique après connexion n'existe pas). La case « Lecture seule » est cochée par défaut ; décochée, Claude peut aussi publier des rapports, créer des activités, modifier des soldes et notifier.
+4. « Autoriser » renvoie vers claude.ai avec un code (60 s, usage unique) que claude.ai échange contre un jeton d'accès (1 h) et un jeton de rafraîchissement (30 jours, rotation).
 
-1. **Découverte** : conserver RFC 9728 (`/.well-known/oauth-protected-resource/mcp`) et RFC 8414 ; ajouter `registration_endpoint` (DCR) et `client_id_metadata_document_supported: true`.
-2. **Clients** : (a) Client ID Metadata Documents : `client_id` = URL HTTPS ; récupérer le document (SSRF : refuser les IP privées, taille et délai bornés, cache court), vérifier que `client_id` correspond et que `redirect_uris` contient l'URI demandée ; (b) DCR RFC 7591 (`POST /api/v1/oauth/register`), clients publics (`token_endpoint_auth_method: none`), table `OAuthClient` (redirect_uris exactes, nom, date), limitation de débit.
-3. **`GET /oauth/authorize`** : valide `client_id`, `redirect_uri` (comparaison exacte), `response_type=code`, `state`, `code_challenge` avec `code_challenge_method=S256` (PKCE obligatoire, `plain` refusé), `resource` (RFC 8707, doit égaler `ROOT_URL/mcp`). Exige une session (OIDC/JWT) puis affiche une page de **consentement** (scopes demandés, niveau lecture seule ou écriture, expiration), protégée CSRF. Génère un code à usage unique (≈ 60 s) lié à client, utilisateur, redirect_uri, challenge, resource, scopes.
-4. **`POST /api/v1/oauth/token`** : `grant_type=authorization_code` (vérifie `code_verifier` contre le challenge, `redirect_uri`, `resource`, usage unique) et `refresh_token` (rotation : à chaque usage, nouveau refresh, l'ancien invalide ; la réutilisation d'un refresh révoque toute la famille).
-5. **Jetons** : access token opaque court (15 min), refresh token (30 j glissants), tous deux stockés **hachés** (SHA-256) dans une table `OAuthToken` (clientId, userId, scopes, audience, expiresAt, familyId, revokedAt). Chaque octroi crée en pratique un `Access` MCP lié (visible et révocable dans la page des accès). Le middleware MCP résout le jeton par hash comme aujourd'hui, et vérifie l'audience (`aud` = ressource MCP) : un jeton émis pour une autre ressource est refusé.
-6. **Révocation** : RFC 7009 (`/api/v1/oauth/revoke`), révocation à la suppression de l'accès, purge périodique des jetons expirés.
-7. **Sécurité** : redirections HTTPS ou loopback uniquement, pas de jeton dans l'URL, en-têtes `Cache-Control: no-store` sur le endpoint de jetons, journalisation des octrois, scopes demandés ∩ `SCOPES_OF_TYPE.MCP`.
-8. **Tests** : PKCE (mauvais verifier), code rejoué, `redirect_uri` différent, `resource` incorrect, rotation/réutilisation du refresh, expiration, clients métadonnées malveillants (SSRF).
+### Claude Code
+
+```
+claude mcp add --transport http ghostfolio https://<domaine>/mcp
+```
+
+puis `/mcp` dans Claude Code, « Authenticate » : le navigateur s'ouvre sur la page de consentement. Les jetons `gfmcp_` avec `--header` restent possibles.
+
+### Endpoints
+
+| Endpoint                                                      | Rôle                                                                                                                           |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /.well-known/oauth-protected-resource/mcp`               | RFC 9728 : ressource `ROOT_URL/mcp`, serveur d'autorisation, scopes.                                                           |
+| `GET /.well-known/oauth-authorization-server`                 | RFC 8414 : endpoints ci-dessous, PKCE `S256`, clients publics.                                                                 |
+| `POST /api/v1/oauth/register`                                 | RFC 7591 : clients publics (`token_endpoint_auth_method: none`), 1 à 10 `redirect_uris` HTTPS ou HTTP loopback, 10/heure/IP.   |
+| `GET /api/v1/oauth/authorize`                                 | Valide la requête (client, `redirect_uri`, PKCE S256 obligatoire, `resource` = `ROOT_URL/mcp`), redirige vers le consentement. |
+| `GET/POST /api/v1/oauth/authorize/consent`                    | Avec le JWT : décrit la demande, puis `{approve, readOnly, …}` renvoie `{redirectUrl}` (code ou `access_denied`).              |
+| `POST /api/v1/oauth/token`                                    | `authorization_code` et `refresh_token`, `Cache-Control: no-store`.                                                            |
+| `POST /api/v1/oauth/revoke`                                   | RFC 7009 : révoque toute la famille (accès et rafraîchissement).                                                               |
+| `GET /api/v1/oauth/grants`, `DELETE /api/v1/oauth/grants/:id` | Avec le JWT : liste et révoque les autorisations de l'utilisateur.                                                             |
+
+### Conception et sécurité
+
+- Tables `OAuthClient`, `OAuthAuthorizationCode`, `OAuthToken` (migration `20261122000002_added_oauth`). Codes et jetons sont opaques (`gfoac_`, `gfoat_`, `gfort_`) et **hachés SHA-256** en base. Les jetons d'une autorisation partagent un `familyId` (= id du code).
+- Code à usage unique (mise à jour atomique), lié au client, à la `redirect_uri` et au `code_verifier` ; un code rejoué révoque les jetons qu'il a émis.
+- Refresh avec rotation ; la réutilisation d'un jeton déjà utilisé révoque la famille.
+- Jeton d'accès : audience (`resource`), expiration, révocation et scopes vérifiés à chaque appel par le middleware MCP ; scopes = demandés ∩ `SCOPES_OF_TYPE.MCP`, sans écriture en mode lecture seule. Un jeton OAuth ne vaut rien hors de `/mcp`.
+- `redirect_uri` : comparaison exacte (seul le port d'une adresse loopback est libre, RFC 8252). Une erreur n'est redirigée vers le client qu'après vérification du client et de la `redirect_uri`. Les redirections portent `iss` (RFC 9207).
+- Limitation de débit (`CustomThrottlerGuard`, avec `ENABLE_FEATURE_RATE_LIMITING`) sur register, authorize, consent, token et revoke.
+- Les codes et jetons expirés depuis plus d'un jour sont purgés à l'octroi suivant.
+
+### Écarts et limites
+
+- Client ID Metadata Documents (préférés par la révision 2025-11-25) **non implémentés** : ils exigent une récupération HTTP côté serveur (SSRF). Seul DCR est annoncé, donc `client_id_metadata_document_supported` est absent.
+- `authorize` est servi sous `/api/v1/oauth/authorize` et non `/oauth/authorize`, pour ne pas entrer en conflit avec le routage du client Angular.
+- Pas de retour automatique vers le consentement après la connexion à Ghostfolio : relancer la connexion depuis le client MCP.
+- Liste et révocation des autorisations dans `/api/v1/oauth/grants` (pas dans `/accesses`), sans écran dans le client.
+- Les clients enregistrés ne sont jamais purgés (plafond de 10 000).
+- Les textes de la page de consentement ne sont pas encore traduits (source anglaise).

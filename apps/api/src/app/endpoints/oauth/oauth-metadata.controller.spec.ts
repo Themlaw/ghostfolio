@@ -1,3 +1,4 @@
+import { getScopesSupportedByMcp } from '@ghostfolio/api/helper/mcp-oauth.helper';
 import { ConfigurationService } from '@ghostfolio/api/services/configuration/configuration.service';
 
 import { NotFoundException } from '@nestjs/common';
@@ -64,7 +65,8 @@ describe('OAuthMetadataController', () => {
       expect(result).toEqual({
         authorization_servers: ['http://localhost:3333'],
         resource: 'http://localhost:3333/mcp',
-        resource_name: 'Ghostfolio'
+        resource_name: 'Ghostfolio',
+        scopes_supported: getScopesSupportedByMcp()
       });
     });
 
@@ -78,7 +80,8 @@ describe('OAuthMetadataController', () => {
       expect(result).toEqual({
         authorization_servers: ['https://ghostfol.io'],
         resource: 'https://ghostfol.io/mcp',
-        resource_name: 'Ghostfolio'
+        resource_name: 'Ghostfolio',
+        scopes_supported: getScopesSupportedByMcp()
       });
     });
   });
@@ -120,12 +123,15 @@ describe('OAuthMetadataController', () => {
       const result = controller.getAuthorizationServerMetadata();
 
       expect(result).toEqual({
-        authorization_endpoint: 'http://localhost:3333/oauth/authorize',
-        client_id_metadata_document_supported: true,
+        authorization_endpoint: 'http://localhost:3333/api/v1/oauth/authorize',
         code_challenge_methods_supported: ['S256'],
         grant_types_supported: ['authorization_code', 'refresh_token'],
         issuer: 'http://localhost:3333',
+        registration_endpoint: 'http://localhost:3333/api/v1/oauth/register',
         response_types_supported: ['code'],
+        revocation_endpoint: 'http://localhost:3333/api/v1/oauth/revoke',
+        revocation_endpoint_auth_methods_supported: ['none'],
+        scopes_supported: getScopesSupportedByMcp(),
         token_endpoint: 'http://localhost:3333/api/v1/oauth/token',
         token_endpoint_auth_methods_supported: ['none']
       });
@@ -139,12 +145,15 @@ describe('OAuthMetadataController', () => {
       const result = controller.getAuthorizationServerMetadata();
 
       expect(result).toEqual({
-        authorization_endpoint: 'https://ghostfol.io/oauth/authorize',
-        client_id_metadata_document_supported: true,
+        authorization_endpoint: 'https://ghostfol.io/api/v1/oauth/authorize',
         code_challenge_methods_supported: ['S256'],
         grant_types_supported: ['authorization_code', 'refresh_token'],
         issuer: 'https://ghostfol.io',
+        registration_endpoint: 'https://ghostfol.io/api/v1/oauth/register',
         response_types_supported: ['code'],
+        revocation_endpoint: 'https://ghostfol.io/api/v1/oauth/revoke',
+        revocation_endpoint_auth_methods_supported: ['none'],
+        scopes_supported: getScopesSupportedByMcp(),
         token_endpoint: 'https://ghostfol.io/api/v1/oauth/token',
         token_endpoint_auth_methods_supported: ['none']
       });

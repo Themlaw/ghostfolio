@@ -2,6 +2,7 @@ import { ConfigurationService } from '@ghostfolio/api/services/configuration/con
 
 import {
   getMcpAuthorizationServerMetadata,
+  getScopesSupportedByMcp,
   getMcpOAuthBaseUrl,
   getMcpProtectedResourceMetadataUrl,
   getMcpResourceUrl,
@@ -32,12 +33,15 @@ describe('mcp-oauth.helper', () => {
       mockConfig.ROOT_URL = 'http://localhost:3333/';
 
       expect(getMcpAuthorizationServerMetadata(configurationService)).toEqual({
-        authorization_endpoint: 'http://localhost:3333/oauth/authorize',
-        client_id_metadata_document_supported: true,
+        authorization_endpoint: 'http://localhost:3333/api/v1/oauth/authorize',
         code_challenge_methods_supported: ['S256'],
         grant_types_supported: ['authorization_code', 'refresh_token'],
         issuer: 'http://localhost:3333',
+        registration_endpoint: 'http://localhost:3333/api/v1/oauth/register',
         response_types_supported: ['code'],
+        revocation_endpoint: 'http://localhost:3333/api/v1/oauth/revoke',
+        revocation_endpoint_auth_methods_supported: ['none'],
+        scopes_supported: getScopesSupportedByMcp(),
         token_endpoint: 'http://localhost:3333/api/v1/oauth/token',
         token_endpoint_auth_methods_supported: ['none']
       });
