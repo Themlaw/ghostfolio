@@ -27,6 +27,7 @@ export interface Environment extends CleanedEnvAccessors {
   ENABLE_FEATURE_MCP_OAUTH: boolean;
   ENABLE_FEATURE_RATE_LIMITING: boolean;
   ENABLE_FEATURE_READ_ONLY_MODE: boolean;
+  ENABLE_FEATURE_REPORTS: boolean;
   ENABLE_FEATURE_SECURITY_HEADERS: boolean;
   ENABLE_FEATURE_STATISTICS: boolean;
   ENABLE_FEATURE_SUBSCRIPTION: boolean;
@@ -36,14 +37,19 @@ export interface Environment extends CleanedEnvAccessors {
   GOOGLE_SHEETS_ACCOUNT: string;
   GOOGLE_SHEETS_ID: string;
   GOOGLE_SHEETS_PRIVATE_KEY: string;
+  JWT_EXPIRES_IN: string;
   JWT_SECRET_KEY: string;
+  MCP_ALLOW_LEGACY_TOKENS: boolean;
   MAX_ACTIVITIES_TO_IMPORT: number;
   MAX_CHART_ITEMS: number;
+  OIDC_ALLOWED_EMAILS: string;
+  OIDC_ALLOWED_SUBJECTS: string;
   OIDC_AUTHORIZATION_URL: string;
   OIDC_CALLBACK_URL: string;
   OIDC_CLIENT_ID?: string;
   OIDC_CLIENT_SECRET?: string;
   OIDC_ISSUER?: string;
+  OIDC_LEGACY_TOKEN_REDIRECT: boolean;
   OIDC_SCOPE: string[];
   OIDC_TOKEN_URL: string;
   OIDC_USER_INFO_URL: string;
@@ -67,4 +73,7 @@ export interface Environment extends CleanedEnvAccessors {
   TWITTER_ACCESS_TOKEN_SECRET: string;
   TWITTER_API_KEY: string;
   TWITTER_API_SECRET: string;
+  VAPID_PRIVATE_KEY: string;
+  VAPID_PUBLIC_KEY: string;
+  VAPID_SUBJECT: string;
 }

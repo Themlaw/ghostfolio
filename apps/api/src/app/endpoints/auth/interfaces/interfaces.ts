@@ -6,26 +6,15 @@ export interface AuthDeviceDialogParams {
   authDevice: AuthDeviceDto;
 }
 
-export interface OidcContext {
-  claims?: {
-    sub?: string;
-  };
-}
-
-export interface OidcIdToken {
-  sub?: string;
-}
-
-export interface OidcParams {
-  sub?: string;
-}
-
-export interface OidcProfile {
-  id?: string;
-  sub?: string;
+export interface OidcFlow {
+  codeVerifier: string;
+  nonce: string;
+  state: string;
 }
 
 export interface ValidateOAuthLoginParams {
+  /** Former identifier (subject only) of an account, which gets migrated */
+  legacyThirdPartyId?: string;
   provider: Provider;
   thirdPartyId: string;
 }

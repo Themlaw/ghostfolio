@@ -48,7 +48,7 @@ type ModuleDefinition =
  * AuthGuard(). The class of such a guard has a random name, hence the
  * snapshot of the routes names it by its strategy
  */
-const AUTHENTICATION_STRATEGIES = ['api-key', 'google', 'jwt', 'oidc'];
+const AUTHENTICATION_STRATEGIES = ['api-key', 'google', 'jwt'];
 
 /**
  * The routes of the controllers which answer a request without the
@@ -79,6 +79,7 @@ const PUBLIC_ROUTES = [
   'GET /sitemap.xml',
   'GET /subscription/stripe/callback',
   'POST /auth/anonymous',
+  'POST /auth/oidc/exchange',
   'POST /auth/webauthn/generate-authentication-options',
   'POST /auth/webauthn/verify-authentication',
   'POST /user'

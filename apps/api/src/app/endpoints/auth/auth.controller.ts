@@ -16,6 +16,7 @@ import {
   Controller,
   Get,
   HttpException,
+  Logger,
   Post,
   Req,
   Res,
@@ -33,14 +34,22 @@ import { getReasonPhrase, StatusCodes } from 'http-status-codes';
 
 import { AuthService } from './auth.service';
 import { GenerateAuthenticationOptionsDto } from './generate-authentication-options.dto';
+import {
+  OIDC_FLOW_COOKIE_NAME,
+  OIDC_FLOW_TTL,
+  OidcService
+} from './oidc.service';
 import { WebAuthService } from './web-auth.service';
 
 @AllowDuringImpersonation()
 @Controller('auth')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   public constructor(
     private readonly authService: AuthService,
     private readonly configurationService: ConfigurationService,
+    private readonly oidcService: OidcService,
     private readonly webAuthService: WebAuthService
   ) {}
 
@@ -93,36 +102,92 @@ export class AuthController {
   }
 
   @Get('oidc')
-  @UseGuards(AuthGuard('oidc'))
   @Version(VERSION_NEUTRAL)
-  public oidcLogin() {
+  public async oidcLogin(@Res() response: Response) {
     if (!this.configurationService.get('ENABLE_FEATURE_AUTH_OIDC')) {
       throw new HttpException(
         getReasonPhrase(StatusCodes.FORBIDDEN),
         StatusCodes.FORBIDDEN
       );
     }
+
+    const { flowId, url } = await this.oidcService.createAuthorizationRequest();
+
+    // The cookie binds the flow to this browser. It is sent along the
+    // top-level redirect back from the provider, hence SameSite=Lax
+    response.cookie(OIDC_FLOW_COOKIE_NAME, flowId, {
+      httpOnly: true,
+      maxAge: OIDC_FLOW_TTL,
+      path: '/api/auth/oidc',
+      sameSite: 'lax',
+      secure: this.oidcService.getCallbackUrl().startsWith('https:')
+    });
+
+    response.redirect(url);
   }
 
   @Get('oidc/callback')
-  @UseGuards(OAuthCallbackGuard('oidc'))
   @Version(VERSION_NEUTRAL)
-  public oidcLoginCallback(@Req() request: Request, @Res() response: Response) {
-    const jwt: string = (request.user as any)?.jwt;
-
-    if (jwt) {
-      response.redirect(
-        `${this.configurationService.get(
-          'ROOT_URL'
-        )}/${DEFAULT_LANGUAGE_CODE}/auth/${jwt}`
-      );
-    } else {
-      response.redirect(
-        `${this.configurationService.get(
-          'ROOT_URL'
-        )}/${DEFAULT_LANGUAGE_CODE}/auth`
+  public async oidcLoginCallback(
+    @Req() request: Request,
+    @Res() response: Response
+  ) {
+    if (!this.configurationService.get('ENABLE_FEATURE_AUTH_OIDC')) {
+      throw new HttpException(
+        getReasonPhrase(StatusCodes.FORBIDDEN),
+        StatusCodes.FORBIDDEN
       );
     }
+
+    const authUrl = `${this.configurationService.get(
+      'ROOT_URL'
+    )}/${DEFAULT_LANGUAGE_CODE}/auth`;
+
+    const flowId = request.cookies?.[OIDC_FLOW_COOKIE_NAME];
+
+    response.clearCookie(OIDC_FLOW_COOKIE_NAME, { path: '/api/auth/oidc' });
+
+    // Keep the code (or the token) out of the Referer header
+    response.setHeader('Referrer-Policy', 'no-referrer');
+
+    try {
+      const jwt = await this.oidcService.handleCallback({
+        flowId,
+        search: new URL(request.originalUrl, 'http://localhost').search
+      });
+
+      if (this.configurationService.get('OIDC_LEGACY_TOKEN_REDIRECT')) {
+        response.redirect(`${authUrl}/${jwt}`);
+      } else {
+        response.redirect(
+          `${authUrl}?code=${this.oidcService.createExchangeCode(jwt)}`
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `Authentication with the oidc strategy has failed: ${
+          error instanceof Error ? error.message : error
+        }`
+      );
+
+      response.redirect(`${authUrl}?error=oidc`);
+    }
+  }
+
+  @Post('oidc/exchange')
+  @UseGuards(CustomThrottlerGuard)
+  @Version(VERSION_NEUTRAL)
+  public oidcExchange(@Body() body: { code: string }): OAuthResponse {
+    const authToken = this.oidcService.exchangeCode(body?.code);
+
+    if (!authToken) {
+      throw new HttpException(
+        getReasonPhrase(StatusCodes.FORBIDDEN),
+        StatusCodes.FORBIDDEN
+      );
+    }
+
+    return { authToken };
   }
 
   @Post('webauthn/generate-authentication-options')

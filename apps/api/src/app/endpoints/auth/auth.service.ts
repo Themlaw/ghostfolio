@@ -36,6 +36,7 @@ export class AuthService {
   }
 
   public async validateOAuthLogin({
+    legacyThirdPartyId,
     provider,
     thirdPartyId
   }: ValidateOAuthLoginParams): Promise<string> {
@@ -43,6 +44,20 @@ export class AuthService {
       let [user] = await this.userService.users({
         where: { provider, thirdPartyId }
       });
+
+      if (!user && legacyThirdPartyId) {
+        // Migrate an account which is linked by the subject only
+        const [legacyUser] = await this.userService.users({
+          where: { provider, thirdPartyId: legacyThirdPartyId }
+        });
+
+        if (legacyUser) {
+          user = await this.userService.updateUser({
+            data: { thirdPartyId },
+            where: { id: legacyUser.id }
+          });
+        }
+      }
 
       if (!user) {
         const isUserSignupEnabled =

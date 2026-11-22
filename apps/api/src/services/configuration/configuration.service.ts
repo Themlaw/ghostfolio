@@ -80,6 +80,7 @@ export class ConfigurationService {
       ENABLE_FEATURE_MCP_OAUTH: bool({ default: false }),
       ENABLE_FEATURE_RATE_LIMITING: bool({ default: false }),
       ENABLE_FEATURE_READ_ONLY_MODE: bool({ default: false }),
+      ENABLE_FEATURE_REPORTS: bool({ default: true }),
       // TODO: Change the default to true, when the security headers were
       // available for some releases without a report of a defect
       ENABLE_FEATURE_SECURITY_HEADERS: bool({ default: false }),
@@ -92,9 +93,13 @@ export class ConfigurationService {
       GOOGLE_SHEETS_ID: str({ default: '' }),
       GOOGLE_SHEETS_PRIVATE_KEY: str({ default: '' }),
       HOST: host({ default: DEFAULT_HOST }),
+      JWT_EXPIRES_IN: str({ default: '180 days' }),
       JWT_SECRET_KEY: str(),
+      MCP_ALLOW_LEGACY_TOKENS: bool({ default: false }),
       MAX_ACTIVITIES_TO_IMPORT: num({ default: Number.MAX_SAFE_INTEGER }),
       MAX_CHART_ITEMS: num({ default: 365 }),
+      OIDC_ALLOWED_EMAILS: str({ default: '' }),
+      OIDC_ALLOWED_SUBJECTS: str({ default: '' }),
       OIDC_AUTHORIZATION_URL: str({ default: '' }),
       OIDC_CALLBACK_URL: str({ default: '' }),
       OIDC_CLIENT_ID: str({
@@ -115,6 +120,7 @@ export class ConfigurationService {
           return env.ENABLE_FEATURE_AUTH_OIDC === true;
         }
       }),
+      OIDC_LEGACY_TOKEN_REDIRECT: bool({ default: false }),
       OIDC_SCOPE: json({ default: ['openid'] }),
       OIDC_TOKEN_URL: str({ default: '' }),
       OIDC_USER_INFO_URL: str({ default: '' }),
@@ -151,7 +157,10 @@ export class ConfigurationService {
       TWITTER_ACCESS_TOKEN: str({ default: 'dummyAccessToken' }),
       TWITTER_ACCESS_TOKEN_SECRET: str({ default: 'dummyAccessTokenSecret' }),
       TWITTER_API_KEY: str({ default: 'dummyApiKey' }),
-      TWITTER_API_SECRET: str({ default: 'dummyApiSecret' })
+      TWITTER_API_SECRET: str({ default: 'dummyApiSecret' }),
+      VAPID_PRIVATE_KEY: str({ default: '' }),
+      VAPID_PUBLIC_KEY: str({ default: '' }),
+      VAPID_SUBJECT: str({ default: '' })
     });
   }
 
