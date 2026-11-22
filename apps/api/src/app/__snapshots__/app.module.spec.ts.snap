@@ -202,6 +202,33 @@ exports[`AppModule should keep the security of each route 1`] = `
     "interceptors": [],
     "permission": "deletePlatform",
   },
+  "DELETE /push-subscriptions": {
+    "guards": [
+      "AuthGuard('jwt')",
+      "HasPermissionGuard",
+      "ImpersonationGuard",
+      "ScopeGuard",
+    ],
+    "interceptors": [],
+    "permission": "readReport",
+    "scopes": [
+      "report:read",
+    ],
+  },
+  "DELETE /reports/:id": {
+    "guards": [
+      "ReportsFeatureGuard",
+      "AuthGuard('jwt')",
+      "HasPermissionGuard",
+      "ImpersonationGuard",
+      "ScopeGuard",
+    ],
+    "interceptors": [],
+    "permission": "deleteReport",
+    "scopes": [
+      "report:update",
+    ],
+  },
   "DELETE /tags/:id": {
     "allowDuringImpersonation": true,
     "guards": [
@@ -512,16 +539,12 @@ exports[`AppModule should keep the security of each route 1`] = `
   },
   "GET /auth/oidc (version neutral)": {
     "allowDuringImpersonation": true,
-    "guards": [
-      "AuthGuard('oidc')",
-    ],
+    "guards": [],
     "interceptors": [],
   },
   "GET /auth/oidc/callback (version neutral)": {
     "allowDuringImpersonation": true,
-    "guards": [
-      "OAuthCallbackGuardMixin('oidc')",
-    ],
+    "guards": [],
     "interceptors": [],
   },
   "GET /auth/webauthn/generate-registration-options": {
@@ -610,6 +633,20 @@ exports[`AppModule should keep the security of each route 1`] = `
     ],
     "interceptors": [],
     "permission": "enableDataProviderGhostfolio",
+  },
+  "GET /decisions": {
+    "guards": [
+      "ReportsFeatureGuard",
+      "AuthGuard('jwt')",
+      "HasPermissionGuard",
+      "ImpersonationGuard",
+      "ScopeGuard",
+    ],
+    "interceptors": [],
+    "permission": "readReport",
+    "scopes": [
+      "report:read",
+    ],
   },
   "GET /exchange-rate/:symbol/:dateString": {
     "guards": [
@@ -826,6 +863,47 @@ exports[`AppModule should keep the security of each route 1`] = `
       "RedactValuesInResponseInterceptor",
     ],
   },
+  "GET /push/vapid-public-key": {
+    "guards": [
+      "AuthGuard('jwt')",
+      "HasPermissionGuard",
+      "ImpersonationGuard",
+      "ScopeGuard",
+    ],
+    "interceptors": [],
+    "permission": "readReport",
+    "scopes": [
+      "report:read",
+    ],
+  },
+  "GET /reports": {
+    "guards": [
+      "ReportsFeatureGuard",
+      "AuthGuard('jwt')",
+      "HasPermissionGuard",
+      "ImpersonationGuard",
+      "ScopeGuard",
+    ],
+    "interceptors": [],
+    "permission": "readReport",
+    "scopes": [
+      "report:read",
+    ],
+  },
+  "GET /reports/:id": {
+    "guards": [
+      "ReportsFeatureGuard",
+      "AuthGuard('jwt')",
+      "HasPermissionGuard",
+      "ImpersonationGuard",
+      "ScopeGuard",
+    ],
+    "interceptors": [],
+    "permission": "readReport",
+    "scopes": [
+      "report:read",
+    ],
+  },
   "GET /sitemap.xml (version neutral)": {
     "guards": [],
     "interceptors": [],
@@ -958,6 +1036,34 @@ exports[`AppModule should keep the security of each route 1`] = `
     ],
     "interceptors": [],
     "permission": "accessAdminControl",
+  },
+  "PATCH /decisions/:id": {
+    "guards": [
+      "ReportsFeatureGuard",
+      "AuthGuard('jwt')",
+      "HasPermissionGuard",
+      "ImpersonationGuard",
+      "ScopeGuard",
+    ],
+    "interceptors": [],
+    "permission": "updateReport",
+    "scopes": [
+      "report:update",
+    ],
+  },
+  "PATCH /reports/:id": {
+    "guards": [
+      "ReportsFeatureGuard",
+      "AuthGuard('jwt')",
+      "HasPermissionGuard",
+      "ImpersonationGuard",
+      "ScopeGuard",
+    ],
+    "interceptors": [],
+    "permission": "updateReport",
+    "scopes": [
+      "report:update",
+    ],
   },
   "POST /access": {
     "allowDuringImpersonation": true,
@@ -1216,6 +1322,13 @@ exports[`AppModule should keep the security of each route 1`] = `
     ],
     "interceptors": [],
   },
+  "POST /auth/oidc/exchange (version neutral)": {
+    "allowDuringImpersonation": true,
+    "guards": [
+      "CustomThrottlerGuard",
+    ],
+    "interceptors": [],
+  },
   "POST /auth/webauthn/generate-authentication-options": {
     "allowDuringImpersonation": true,
     "guards": [
@@ -1256,6 +1369,20 @@ exports[`AppModule should keep the security of each route 1`] = `
     "interceptors": [],
     "permission": "accessAdminControl",
   },
+  "POST /decisions/:id/answer": {
+    "guards": [
+      "ReportsFeatureGuard",
+      "AuthGuard('jwt')",
+      "HasPermissionGuard",
+      "ImpersonationGuard",
+      "ScopeGuard",
+    ],
+    "interceptors": [],
+    "permission": "updateReport",
+    "scopes": [
+      "report:update",
+    ],
+  },
   "POST /import": {
     "guards": [
       "AuthGuard('jwt')",
@@ -1291,6 +1418,33 @@ exports[`AppModule should keep the security of each route 1`] = `
     ],
     "interceptors": [],
     "permission": "createPlatform",
+  },
+  "POST /push-subscriptions": {
+    "guards": [
+      "AuthGuard('jwt')",
+      "HasPermissionGuard",
+      "ImpersonationGuard",
+      "ScopeGuard",
+    ],
+    "interceptors": [],
+    "permission": "readReport",
+    "scopes": [
+      "report:read",
+    ],
+  },
+  "POST /reports": {
+    "guards": [
+      "ReportsFeatureGuard",
+      "AuthGuard('jwt')",
+      "HasPermissionGuard",
+      "ImpersonationGuard",
+      "ScopeGuard",
+    ],
+    "interceptors": [],
+    "permission": "createReport",
+    "scopes": [
+      "report:create",
+    ],
   },
   "POST /subscription/redeem-coupon": {
     "allowDuringImpersonation": true,

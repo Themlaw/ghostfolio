@@ -58,6 +58,19 @@ export const SCOPES_OF_WRITE_ACCESS: readonly Scope[] = [
   scopes.watchlistDelete
 ];
 
+/**
+ * Scopes of the copilot (reports, decisions and notifications), which hold
+ * personal analyses and can notify the user. They are granted to the user's
+ * own Model Context Protocol (MCP) access only, never to an access shared with
+ * another user.
+ */
+export const SCOPES_OF_COPILOT: readonly Scope[] = [
+  scopes.notificationCreate,
+  scopes.reportCreate,
+  scopes.reportRead,
+  scopes.reportUpdate
+];
+
 const SCOPES_OF_PUBLIC_ACCESS: readonly Scope[] = [
   scopes.activityRead,
   scopes.portfolioRead
@@ -84,7 +97,9 @@ const SCOPES_OF_TYPE: Record<AccessType, readonly Scope[]> = {
     scopes.reportCreate,
     scopes.reportUpdate
   ],
-  PRIVATE: Object.values(scopes),
+  PRIVATE: Object.values(scopes).filter((scope) => {
+    return !SCOPES_OF_COPILOT.includes(scope);
+  }),
   PUBLIC: SCOPES_OF_PUBLIC_ACCESS
 };
 
@@ -166,10 +181,12 @@ export function getScopesOfOwnAccess(): string[] {
 
 /**
  * Scopes of an administrator impersonating an arbitrary user, which excludes
- * the monetary values
+ * the monetary values and the personal reports of the copilot
  */
 export function getScopesOfUnrestrictedImpersonation(): string[] {
-  return [...SCOPES_OF_READ_RESTRICTED_ACCESS];
+  return SCOPES_OF_READ_RESTRICTED_ACCESS.filter((scope) => {
+    return !SCOPES_OF_COPILOT.includes(scope);
+  });
 }
 
 export function hasAnyScopeOfWriteAccess(aScopes: string[] = []) {

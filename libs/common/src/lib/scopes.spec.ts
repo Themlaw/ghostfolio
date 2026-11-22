@@ -1,5 +1,6 @@
 import {
   Scope,
+  SCOPES_OF_COPILOT,
   SCOPES_OF_READ_ACCESS,
   SCOPES_OF_READ_RESTRICTED_ACCESS,
   SCOPES_OF_WRITE_ACCESS,
@@ -25,6 +26,7 @@ describe('Scopes', () => {
         scopes.activityRead,
         scopes.portfolioRead,
         scopes.portfolioReadValues,
+        scopes.reportRead,
         scopes.watchlistRead
       ]);
     });
@@ -41,6 +43,9 @@ describe('Scopes', () => {
         scopes.activityCreate,
         scopes.activityDelete,
         scopes.activityUpdate,
+        scopes.notificationCreate,
+        scopes.reportCreate,
+        scopes.reportUpdate,
         scopes.watchlistCreate,
         scopes.watchlistDelete
       ]);
@@ -152,7 +157,22 @@ describe('Scopes', () => {
       });
 
       for (const scope of SCOPES_OF_WRITE_ACCESS) {
-        expect(scopesOfAccess).toContain(scope);
+        if (!SCOPES_OF_COPILOT.includes(scope)) {
+          expect(scopesOfAccess).toContain(scope);
+        }
+      }
+    });
+
+    // The reports, decisions and notifications of the copilot are personal,
+    // hence an access shared with another user never grants them
+    it('Never gives the scopes of the copilot to an access shared with another user', () => {
+      const scopesOfAccess = getScopesOfAccess({
+        type: 'PRIVATE',
+        scopes: [...SCOPES_OF_READ_ACCESS, ...SCOPES_OF_WRITE_ACCESS]
+      });
+
+      for (const scope of SCOPES_OF_COPILOT) {
+        expect(scopesOfAccess).not.toContain(scope);
       }
     });
 
@@ -260,7 +280,7 @@ describe('Scopes', () => {
 
     // The controller exposes no tool for a further write scope, hence it stays
     // ineffective
-    it('Gives the write scopes to update an account and to create an activity only', () => {
+    it('Gives the write scopes to update an account, to create an activity and of the copilot only', () => {
       expect(
         getScopesOfAccess({
           scopes: [...SCOPES_OF_READ_ACCESS, ...SCOPES_OF_WRITE_ACCESS],
@@ -268,7 +288,13 @@ describe('Scopes', () => {
         }).filter((scope) => {
           return SCOPES_OF_WRITE_ACCESS.includes(scope as Scope);
         })
-      ).toEqual([scopes.accountUpdate, scopes.activityCreate]);
+      ).toEqual([
+        scopes.accountUpdate,
+        scopes.activityCreate,
+        scopes.notificationCreate,
+        scopes.reportCreate,
+        scopes.reportUpdate
+      ]);
     });
 
     // The dialog narrows the access level to the scopes which the type
@@ -326,8 +352,12 @@ describe('Scopes', () => {
         scopes.activityDelete,
         scopes.activityRead,
         scopes.activityUpdate,
+        scopes.notificationCreate,
         scopes.portfolioRead,
         scopes.portfolioReadValues,
+        scopes.reportCreate,
+        scopes.reportRead,
+        scopes.reportUpdate,
         scopes.watchlistCreate,
         scopes.watchlistDelete,
         scopes.watchlistRead
@@ -337,8 +367,9 @@ describe('Scopes', () => {
 
   describe('Get scopes of unrestricted impersonation', () => {
     // A new scope has to be added here deliberately to confirm that it is
-    // granted to an administrator impersonating an arbitrary user
-    it('Covers every read scope but the monetary values', () => {
+    // granted to an administrator impersonating an arbitrary user. The reports
+    // of the copilot are personal, hence they are excluded.
+    it('Covers every read scope but the monetary values and the reports', () => {
       expect(getScopesOfUnrestrictedImpersonation()).toEqual([
         scopes.accountRead,
         scopes.activityRead,
