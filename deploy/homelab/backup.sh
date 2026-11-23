@@ -7,6 +7,8 @@
 # Planification (cron de l'utilisateur) :
 #   30 3 * * * /chemin/vers/ghostfolio/deploy/homelab/backup.sh >> /var/log/ghostfolio-backup.log 2>&1
 #
+# Utilise « docker exec » sur le conteneur gf-postgres : fonctionne quel que soit
+# le dossier de la stack Komodo.
 # Restauration : voir docs/deploy-homelab.md
 
 set -euo pipefail
@@ -21,7 +23,7 @@ mkdir -p "$BACKUP_DIR"
 file="$BACKUP_DIR/ghostfolio-$(date +%Y%m%d-%H%M%S).dump"
 
 # Les variables POSTGRES_* sont celles du conteneur (lues depuis son env_file)
-docker compose exec -T postgres sh -c \
+docker exec -i gf-postgres sh -c \
   'pg_dump --format=custom --compress=6 --no-owner -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
   >"$file.tmp"
 

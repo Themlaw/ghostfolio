@@ -1,137 +1,141 @@
-# Déployer le fork « copilote » sur un homelab
+# Déployer le fork « copilote » sur un homelab (Komodo + Pangolin)
 
-Ce guide installe ce fork de Ghostfolio sur un serveur personnel avec :
+Ce guide installe ce fork de Ghostfolio avec **Komodo** (gestion des stacks Docker) et **Pangolin** (reverse proxy tunnelé, agent **Newt**) :
 
 - connexion **uniquement via Authentik** (OIDC, PKCE, liste blanche sur votre compte) ;
 - **notifications push** sur le téléphone (PWA, HTTPS obligatoire) ;
 - **serveur MCP** joignable par claude.ai (OAuth 2.1) et par Claude Code ;
+- **contrôle de l'en-tête Host** (réponse 421 hors de votre domaine) ;
 - sauvegardes PostgreSQL et procédure de mise à jour.
 
 Les fichiers sont dans [`deploy/homelab/`](../deploy/homelab/) :
 
-| Fichier                                   | Rôle                                                               |
-| ----------------------------------------- | ------------------------------------------------------------------ |
-| `docker-compose.yml`                      | Ghostfolio, PostgreSQL, Redis, et `cloudflared` (profil optionnel) |
-| `docker-compose.traefik.yml`              | Surcharge : labels Traefik                                         |
-| `docker-compose.build.yml`                | Surcharge : build local au lieu de l'image GHCR                    |
-| `Caddyfile.example`                       | Bloc Caddy                                                         |
-| `.env.example`, `.env.cloudflare.example` | Modèles de configuration                                           |
-| `init-secrets.sh`                         | Génère les secrets dans `.env` (idempotent)                        |
-| `backup.sh`                               | Sauvegarde `pg_dump` avec rotation                                 |
+| Fichier                    | Rôle                                                                           |
+| -------------------------- | ------------------------------------------------------------------------------ |
+| `docker-compose.yml`       | À coller dans la stack Komodo : Ghostfolio, PostgreSQL, Redis (aucun port)     |
+| `komodo.env.example`       | À coller dans le champ Environment de la stack (variante `[[SECRET]]` incluse) |
+| `print-secrets.sh`         | Affiche des secrets prêts à coller (openssl seul, n'écrit rien)                |
+| `backup.sh`                | Sauvegarde `pg_dump` avec rotation                                             |
+| `docker-compose.build.yml` | Surcharge pour compiler l'image localement (stack sur dépôt Git)               |
 
 Le workflow `.github/workflows/docker-image-copilote.yml` construit l'image.
 
+**Ce qui a été vérifié, et ce qui ne l'a pas été.** Les pages de documentation de Komodo (stacks, variables) et de Pangolin (ressources, règles, en-têtes, cibles) ont été lues dans leurs dépôts GitHub sources. Rien n'a été testé sur une vraie instance Komodo ou Pangolin : les libellés de l'interface peuvent différer, et les points marqués « non vérifié » sont à contrôler chez vous.
+
 ## 0. Prérequis
 
-- Un hôte Docker avec Docker Compose v2.24 ou plus récent (amd64 ; arm64 aussi, par exemple un Raspberry Pi 4/5 en OS 64 bits). 2 Go de RAM libres suffisent pour exécuter l'image ; la compiler localement demande nettement plus (voir plus bas).
-- Un **nom de domaine public** pointant vers votre homelab, en **HTTPS** (certificat valide). C'est indispensable : le service worker et les notifications push n'existent qu'en HTTPS, et claude.ai (qui tourne dans le cloud d'Anthropic) doit joindre `/mcp` depuis Internet.
-- Une instance **Authentik** accessible depuis le conteneur Ghostfolio (le conteneur télécharge la découverte OIDC et les clés de signature).
-- Un reverse proxy (Traefik, Caddy...) **ou** un compte Cloudflare pour un tunnel.
+- Komodo (Core + agent Periphery) sur l'hôte Docker (amd64 ; arm64 aussi, par exemple un Raspberry Pi 4/5 en OS 64 bits). 2 Go de RAM libres suffisent pour exécuter l'image.
+- Pangolin avec un **site** (agent **Newt**) qui peut joindre l'hôte Docker, et un **domaine** géré dans Pangolin (HTTPS, certificat émis par Pangolin). HTTPS est indispensable : le service worker et le push n'existent qu'en HTTPS, et claude.ai (cloud d'Anthropic) doit joindre `/mcp` depuis Internet.
+- Une instance **Authentik** accessible depuis le conteneur Ghostfolio (découverte OIDC et clés de signature).
 
 Dans la suite, `ghostfolio.example.com` désigne le domaine de Ghostfolio et `auth.example.com` celui d'Authentik.
 
 ## 1. Image Docker
-
-### Option recommandée : image construite par GitHub Actions
 
 À chaque `push` sur la branche `copilote`, le workflow `Docker image (copilote)` construit l'image pour `linux/amd64` et `linux/arm64` et la publie sur :
 
 - `ghcr.io/themlaw/ghostfolio:copilote` (dernière version de la branche) ;
 - `ghcr.io/themlaw/ghostfolio:sha-<commit court>` (version précise, pour revenir en arrière).
 
-Le workflow n'a que les permissions `contents: read` et `packages: write`, et ses actions sont épinglées par SHA de commit. Il ne se déclenche pas si seuls `deploy/`, `docs/` ou des `.md` changent. Vous pouvez aussi le lancer à la main (onglet Actions, « Run workflow »).
+Le workflow n'a que les permissions `contents: read` et `packages: write`, et ses actions sont épinglées par SHA. Il ne se déclenche pas si seuls `deploy/`, `docs/` ou des `.md` changent. Vous pouvez aussi le lancer à la main (onglet Actions, « Run workflow »).
 
 Après le premier build, **rendez le paquet lisible par votre homelab** (une des deux façons) :
 
-1. GitHub > votre profil > Packages > `ghostfolio` > Package settings > Change visibility > **Public**. Le plus simple : l'image ne contient pas de secret (ils sont dans `.env`). ou
-2. Gardez-le privé et connectez-vous sur le homelab avec un jeton classique GitHub ayant uniquement le droit `read:packages` :
-   `echo <jeton> | docker login ghcr.io -u Themlaw --password-stdin`
+1. GitHub > votre profil > Packages > `ghostfolio` > Package settings > Change visibility > **Public**. Le plus simple : l'image ne contient aucun secret. ou
+2. Gardez-le privé et connectez l'hôte avec un jeton classique GitHub ayant uniquement `read:packages` : `echo <jeton> | docker login ghcr.io -u Themlaw --password-stdin` (sur l'hôte de Periphery). Komodo sait aussi gérer des comptes de registre (Settings > Providers ; non vérifié ici).
 
-Le premier build prend 15 à 30 minutes (compilation de l'application et émulation arm64 pour l'étape finale) ; les suivants profitent du cache.
+Le premier build prend 15 à 30 minutes ; les suivants profitent du cache.
 
-### Option : compiler sur le homelab
+Compiler sur le homelab (au moins 4 Go de RAM) suppose une stack sur **dépôt Git** (et non « UI defined ») : ajoutez `docker-compose.build.yml` aux fichiers de la stack. Sur un Raspberry Pi, préférez l'image GHCR arm64.
 
-```bash
-docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
-```
+## 2. Créer la stack dans Komodo
 
-Prévoyez au moins 4 Go de RAM disponibles pour la compilation (Angular). Sur un Raspberry Pi, préférez l'image GHCR arm64.
+D'après la documentation de Komodo, une stack peut avoir ses fichiers compose **écrits dans l'interface** (« UI defined » : Komodo les dépose sur l'hôte au déploiement) ; le champ **Environment** est écrit dans un fichier d'environnement passé à `docker compose --env-file`, et **réécrit à chaque déploiement** : ne modifiez jamais ce fichier à la main sur l'hôte. Compose interpole alors les `${VAR}` du compose avec ces valeurs.
 
-## 2. Récupérer le kit et créer `.env`
+1. Générez les secrets sur n'importe quelle machine disposant d'`openssl` :
+   ```bash
+   git clone --branch copilote https://github.com/Themlaw/ghostfolio.git
+   ./ghostfolio/deploy/homelab/print-secrets.sh
+   ```
+   Le script affiche `ACCESS_TOKEN_SALT`, `JWT_SECRET_KEY`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD` (`openssl rand -hex 32`) et la paire VAPID (EC P-256, clés brutes en base64url, générées avec `openssl` seul), au format `NOM=valeur`. Il n'écrit rien : chaque exécution donne de nouvelles valeurs, donc **exécutez-le une fois** et gardez le résultat dans votre gestionnaire de mots de passe. Les clés VAPID générées ont été vérifiées avec la bibliothèque `web-push` de ce dépôt (`setVapidDetails`, clé publique dérivée de la privée).
+2. Komodo > Stacks > **New Stack**, nom `ghostfolio`, serveur = votre hôte Docker. Laissez la stack en mode « UI defined » (ni dépôt Git, ni fichiers sur l'hôte).
+3. Dans la configuration de la stack, collez **`docker-compose.yml`** dans l'éditeur de fichier compose, et **`komodo.env.example`** dans **Environment**. Remplacez `ROOT_URL`, `OIDC_*` (après l'étape 4), `VAPID_SUBJECT`, et collez les secrets de l'étape 1.
+4. **Variante Secrets globaux de Komodo.** Komodo permet de créer des Variables dans _Settings > Variables_ avec l'option « secret » (masquées dans les journaux et réservées aux administrateurs) et de les interpoler dans l'Environment avec la syntaxe `[[NOM]]`, par exemple `ACCESS_TOKEN_SALT=[[GHOSTFOLIO_ACCESS_TOKEN_SALT]]` (la liste est dans `komodo.env.example`). Avantage : les valeurs ne figurent plus dans la configuration de la stack. Inconvénient : elles sont dans la base de Komodo ; sauvegardez-la aussi.
+5. **Save**, puis **Deploy**. Si une variable obligatoire manque, le déploiement échoue immédiatement avec un message du type `required variable JWT_SECRET_KEY is missing a value: JWT_SECRET_KEY est obligatoire (...)`.
 
-```bash
-git clone --branch copilote https://github.com/Themlaw/ghostfolio.git
-cd ghostfolio/deploy/homelab
-./init-secrets.sh
-```
+Réglages par défaut du kit (modifiables dans l'Environment) :
 
-Le script crée `.env` (droits 600) depuis `.env.example` et génère `ACCESS_TOKEN_SALT`, `JWT_SECRET_KEY`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD` et la paire de clés VAPID (avec `openssl` ; à défaut, avec `web-push` dans un conteneur `node:22-alpine`). Il **ne modifie jamais** une valeur déjà renseignée et peut donc être relancé. Il liste ce qu'il reste à remplir.
+| Variable                                | Valeur        | Pourquoi                                                                                             |
+| --------------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------- |
+| `ENABLE_FEATURE_HOST_VALIDATION`        | `true`        | refuse les requêtes dont le Host n'est pas `ROOT_URL` (voir plus bas)                                |
+| `TRUST_PROXY`                           | `uniquelocal` | le trafic arrive depuis Newt, sur un réseau Docker privé (voir plus bas)                             |
+| `ENABLE_FEATURE_RATE_LIMITING`          | `true`        | limite le débit sur les routes sensibles ; nécessite un `TRUST_PROXY` correct                        |
+| `JWT_EXPIRES_IN`                        | `7 days`      | session de 7 jours ; la reconnexion via Authentik est rapide                                         |
+| `ENABLE_FEATURE_AUTH_TOKEN` / `_GOOGLE` | `false`       | OIDC seul (le bouton jeton est masqué ; il n'y a aucun compte à jeton une fois l'inscription fermée) |
+| `ENABLE_FEATURE_MCP`, `..._MCP_OAUTH`   | `true`        | serveur MCP et OAuth 2.1 (exige `ROOT_URL` en HTTPS)                                                 |
+| `ENABLE_FEATURE_REPORTS`                | `true`        | page « Veille » et décisions                                                                         |
+| `MCP_ALLOW_LEGACY_TOKENS`               | `false`       | refuse les anciens jetons MCP                                                                        |
 
-Éditez ensuite `.env` : `ROOT_URL`, `VAPID_SUBJECT` (`mailto:vous@exemple.fr`) et, après l'étape 4, `OIDC_*`. Sauvegardez `.env` dans votre gestionnaire de mots de passe : perdre `VAPID_PRIVATE_KEY` oblige à réactiver les notifications sur chaque appareil, et changer `ACCESS_TOKEN_SALT` invalide les jetons de sécurité existants.
+Chaque variable de l'application est listée dans `environment:` du compose : une variable ajoutée dans Komodo mais absente de cette liste n'atteint pas le conteneur. Pour en ajouter une, éditez aussi le compose.
 
-Toutes les variables de `.env.example` existent dans `apps/api/src/services/configuration/configuration.service.ts`, sauf celles qui ne servent qu'à Docker Compose (`GHOSTFOLIO_IMAGE`, `GHOSTFOLIO_BIND`, `GHOSTFOLIO_PORT`, `GHOSTFOLIO_DOMAIN`, `PROXY_NETWORK`, `TRAEFIK_CERTRESOLVER`, `POSTGRES_DB/USER/PASSWORD`).
+## 3. Exposer Ghostfolio avec Pangolin
 
-Réglages par défaut à connaître :
+Le compose **ne publie aucun port**. Ghostfolio écoute en HTTP sur le port **3333** (`PORT` par défaut, `EXPOSE` du Dockerfile) ; Pangolin assure le HTTPS. PostgreSQL et Redis restent sur un réseau interne **sans accès Internet ni hôte**.
 
-| Variable                              | Valeur   | Pourquoi                                                                                                |
-| ------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------- |
-| `JWT_EXPIRES_IN`                      | `7 days` | session de 7 jours ; la reconnexion via Authentik est rapide                                            |
-| `ENABLE_FEATURE_RATE_LIMITING`        | `true`   | limite le débit sur les routes sensibles (connexion, OAuth). Nécessite `TRUST_PROXY`                    |
-| `TRUST_PROXY`                         | `1`      | un seul proxy devant l'application. Mettre `2` si Cloudflare Tunnel **et** Traefik/Caddy sont en chaîne |
-| `ENABLE_FEATURE_AUTH_TOKEN`           | `false`  | masque la connexion par jeton dans l'interface (OIDC seul)                                              |
-| `ENABLE_FEATURE_AUTH_GOOGLE`          | `false`  | pas de connexion Google                                                                                 |
-| `ENABLE_FEATURE_MCP`, `..._MCP_OAUTH` | `true`   | serveur MCP et OAuth 2.1 (exige `ROOT_URL` en HTTPS)                                                    |
-| `ENABLE_FEATURE_REPORTS`              | `true`   | page « Veille » et décisions                                                                            |
-| `MCP_ALLOW_LEGACY_TOKENS`             | `false`  | refuse les anciens jetons MCP                                                                           |
+### Brancher Newt
 
-Limites de `ENABLE_FEATURE_AUTH_TOKEN=false` : cela ne masque que le bouton. La route d'API de connexion par jeton existe toujours, mais il n'y a aucun compte à jeton (ils ne se créent que par l'inscription publique, que l'étape 6 désactive).
+- **Newt sur le même hôte (cas courant).** Le réseau `web` de la stack porte un nom fixe, `ghostfolio_web` (variable `GHOSTFOLIO_WEB_NETWORK`). Faites rejoindre ce réseau au conteneur Newt, dans sa propre stack ou la vôtre :
+  ```yaml
+  services:
+    newt:
+      # ... image, PANGOLIN_ENDPOINT, NEWT_ID, NEWT_SECRET comme d'habitude ...
+      networks:
+        - ghostfolio_web
+  networks:
+    ghostfolio_web:
+      external: true
+  ```
+  Déployez d'abord la stack Ghostfolio (qui crée le réseau). Dans Pangolin, la cible est alors `ghostfolio` (nom du conteneur et du service), port `3333`. D'après la documentation de Pangolin, avec un réseau Docker défini, les noms d'hôte sont utilisés pour la découverte via le socket Docker.
+- **Newt sur une autre machine.** Il ne voit pas le réseau Docker : publiez le port sur l'adresse du LAN dans le compose, sous le service `ghostfolio` : `ports: ['192.168.1.10:3333:3333']`. Cible Pangolin : `192.168.1.10:3333`. Ne liez pas `0.0.0.0` si l'hôte est exposé à Internet. Avec un port publié, le pair vu par Ghostfolio est l'adresse du LAN de Newt : `TRUST_PROXY=uniquelocal` reste valable, mais seule cette machine doit pouvoir joindre le port (pare-feu).
 
-## 3. Exposer Ghostfolio en HTTPS
+### Créer la ressource
 
-Le conteneur n'écoute qu'en HTTP (port 3333) : le HTTPS est assuré par le proxy ou le tunnel. Seul le port de Ghostfolio est publié (par défaut sur `127.0.0.1`) ; PostgreSQL et Redis restent sur un réseau Docker interne **sans accès Internet ni hôte**. Ghostfolio, lui, a un second réseau (`web`) pour joindre Yahoo Finance, CoinGecko et Authentik.
+1. Pangolin > Resources > **Add resource** > type **HTTP/HTTPS**. Nom `Ghostfolio`, domaine `ghostfolio.example.com` (sous-domaine d'un domaine géré par Pangolin), HTTPS actif.
+2. Cible : le site de Newt, méthode `http`, hôte `ghostfolio`, port `3333`. **Laissez vide l'option « Custom Host Header »** : d'après la documentation de Pangolin, sans elle la requête arrive avec le nom d'hôte public de la ressource, ce que le contrôle de l'hôte de Ghostfolio attend. Si vous la renseignez, ajoutez cette valeur à `ALLOWED_HOSTS`.
+3. Authentification : voir la section suivante (par défaut, Pangolin active son SSO sur toute nouvelle ressource).
 
-### Variante A : reverse proxy existant
+### SSO de Pangolin : à ne pas activer sur cette ressource
 
-**Traefik** (dans Docker, avec un réseau partagé nommé `proxy`) :
+Par défaut, une ressource Pangolin exige une connexion à Pangolin (« Platform SSO ») avant que la requête n'atteigne l'application. C'est **incompatible avec claude.ai** : claude.ai appelle `/mcp`, `/.well-known/oauth-*` et `/api/v1/oauth/{register,token,revoke}` **de serveur à serveur**, depuis le cloud d'Anthropic, sans navigateur ni cookie Pangolin ; il recevrait une redirection vers la page de connexion de Pangolin et le connecteur échouerait.
 
-```bash
-# dans .env : GHOSTFOLIO_DOMAIN, PROXY_NETWORK, TRAEFIK_CERTRESOLVER
-docker compose -f docker-compose.yml -f docker-compose.traefik.yml up -d
-```
+Deux options :
 
-Vérifiez que l'entrypoint (`websecure`) et le resolver de certificats correspondent à votre Traefik (`docker-compose.traefik.yml`). **Ne mettez aucun middleware d'authentification** (forward-auth Authentik, basic auth) sur ce routeur.
+**A. Pas de SSO Pangolin sur la ressource (recommandé).** Désactivez les méthodes d'authentification de la ressource (SSO, PIN, mot de passe, e-mail). Ghostfolio a sa propre connexion (Authentik, liste blanche `OIDC_ALLOWED_SUBJECTS`, inscription fermée) ; l'API exige un JWT, `/mcp` un jeton OAuth, le rate limiting est actif et le contrôle de l'hôte filtre les requêtes mal adressées. Le téléphone (PWA, notifications) et Claude Code fonctionnent sans rien de plus. C'est l'option la plus simple et celle qui casse le moins de choses.
 
-**Caddy** : copiez le bloc de `Caddyfile.example` dans votre Caddyfile, adaptez le domaine et la cible (`127.0.0.1:3333` si Caddy est sur l'hôte ; `ghostfolio:3333` si Caddy est dans Docker et a rejoint le réseau `ghostfolio_web`), puis rechargez Caddy. Si le proxy est sur une autre machine, mettez `GHOSTFOLIO_BIND=<IP du LAN>` dans `.env`.
+**B. SSO Pangolin + règles de contournement.** Pangolin permet des règles classées (onglet « Rules ») dont l'action « Bypass Auth » laisse passer sans authentification les chemins correspondants. Les motifs de chemin se comparent segment par segment, `*` remplaçant des caractères au sein d'un segment. Il faudrait contourner : `mcp` et `mcp/*`, `.well-known/*`, `api/v1/oauth/*`. Ce que cela implique :
 
-### Variante B : Cloudflare Tunnel
+- le navigateur et la PWA doivent aussi ouvrir une session Pangolin en plus d'Authentik (double connexion) ; une session Pangolin expirée fait échouer les appels `/api/*` de l'application (réponse de redirection au lieu de JSON) et peut perturber la PWA ;
+- tout autre client d'API (scripts, `/api/v1/...` avec jeton) est bloqué tant qu'il n'a pas de session Pangolin, sauf à ajouter d'autres règles ;
+- les chemins contournés restent exposés à Internet, protégés par les seules défenses de Ghostfolio : le SSO Pangolin n'apporte donc pas de protection supplémentaire là où les attaquants peuvent aller (`/mcp`, OAuth). Il ne protège que le reste de l'application, déjà protégé par le JWT ;
+- les règles sont à tester (non vérifié ici), par exemple avec `curl -i https://ghostfolio.example.com/.well-known/oauth-authorization-server` qui doit renvoyer du JSON, pas une page de connexion.
 
-Pratique si vous ne voulez pas ouvrir de port sur votre box (ou si vous êtes derrière un CGNAT) :
+Choisissez B seulement si vous voulez absolument une couche Pangolin devant l'interface web. Dans les deux cas, une règle Pangolin « Block » sur `admin/queues*` (interface Bull Board) est une défense en profondeur gratuite ; Bull Board a de toute façon sa propre authentification.
 
-1. Zero Trust > Networks > Tunnels > Create a tunnel (cloudflared). Copiez le **jeton**.
-2. `cp .env.cloudflare.example .env.cloudflare`, collez le jeton après `TUNNEL_TOKEN=`, `chmod 600 .env.cloudflare`.
-3. Dans le tunnel, onglet « Public hostname » : domaine `ghostfolio.example.com`, service `HTTP`, URL `ghostfolio:3333`.
-4. `docker compose --profile cloudflare up -d`.
+### Pourquoi `ROOT_URL` et le contrôle de l'hôte comptent
 
-Le jeton est dans un fichier séparé afin de ne pas être transmis au conteneur Ghostfolio. Le DNS du domaine doit être géré par Cloudflare.
+Ghostfolio construit des URL à partir de `ROOT_URL` (callback OIDC, métadonnées OAuth, redirections) et le serveur MCP n'accepte que son nom d'hôte. Si l'application répond aussi à d'autres noms d'hôte (adresse IP du serveur, domaine oublié, DNS d'un attaquant pointant vers votre IP), un en-tête `Host` forgé peut servir à contourner ces contrôles, à empoisonner des liens ou des redirections, ou à lancer une attaque de « DNS rebinding » depuis le navigateur d'une victime vers votre service. Avec `ENABLE_FEATURE_HOST_VALIDATION=true`, Ghostfolio répond **421 Misdirected Request** (corps minimal, sans détail) à toute requête dont le `Host`, sans le port et sans tenir compte de la casse, n'est pas celui de `ROOT_URL` ou de `ALLOWED_HOSTS` (liste séparée par des virgules). Les adresses `localhost`, `127.0.0.1` et `::1` ne sont acceptées que pour `/api/v1/health*`, afin que le healthcheck Docker fonctionne. Seul l'en-tête `Host` compte : `X-Forwarded-Host` est ignoré, car un client peut le forger. Si la variable est activée sans `ROOT_URL`, Ghostfolio **refuse de démarrer** (une protection demandée qui se désactiverait en silence serait pire qu'un échec visible).
 
-### Que faut-il exposer, et les compromis
+### `TRUST_PROXY`
 
-Ghostfolio n'est **pas** placé derrière Authentik en forward-auth : il a sa propre authentification OIDC, et claude.ai, qui appelle `/mcp` depuis le cloud d'Anthropic, ne peut pas passer une page de connexion Authentik. Mettre un forward-auth, Cloudflare Access ou un basic auth devant tout le domaine casserait le connecteur.
+Ghostfolio a besoin de la vraie IP du client (rate limiting, journaux). Le pair TCP de Ghostfolio est le conteneur Newt, sur une adresse privée du réseau Docker ; Pangolin ajoute l'IP du client à `X-Forwarded-For`. `TRUST_PROXY=uniquelocal` (valeur acceptée par Express : nombre de sauts, `loopback`, `linklocal`, `uniquelocal`, adresse ou CIDR, liste séparée par des virgules) fait confiance aux adresses privées et lit l'IP du client dans l'en-tête. Sans cette valeur, tous les clients partagent la même limite de débit (celle de Newt). Précautions :
 
-**Recommandation : exposer tout Ghostfolio en HTTPS.** L'API exige un JWT, le serveur MCP exige un jeton, la connexion est liée à votre seul compte Authentik, et le rate limiting est actif. C'est aussi ce qu'il faut pour que le téléphone (PWA, notifications) fonctionne hors de chez vous.
+- ne publiez pas le port de Ghostfolio vers Internet : n'importe qui pourrait alors forger `X-Forwarded-For` ;
+- si un client de votre LAN se connecte via Pangolin, son IP privée est traitée comme un proxy et ignorée (effet mineur) ;
+- si Pangolin est derrière un autre proxy public (Cloudflare, par exemple), l'IP de celui-ci n'est pas privée : utilisez plutôt `TRUST_PROXY=uniquelocal,<CIDR de ce proxy>` ou un nombre de sauts. Le comportement exact d'`X-Forwarded-For` chez Pangolin/Newt n'est pas décrit dans la documentation lue : vérifiez, par exemple depuis les journaux de Ghostfolio, que les clients ont bien des IP distinctes.
 
-Si vous voulez réduire la surface, voici ce que la technique permet, **non testé ici** : seules les routes suivantes sont appelées par les serveurs d'Anthropic.
+### Autres reverse proxies (annexe)
 
-| Chemin                                                                                                | Appelé par                    |
-| ----------------------------------------------------------------------------------------------------- | ----------------------------- |
-| `/mcp`                                                                                                | claude.ai (serveur à serveur) |
-| `/.well-known/oauth-protected-resource/mcp`, `/.well-known/oauth-authorization-server`                | claude.ai                     |
-| `POST /api/v1/oauth/register`, `POST /api/v1/oauth/token`, `POST /api/v1/oauth/revoke`                | claude.ai                     |
-| `GET /api/v1/oauth/authorize`, page `/<langue>/oauth/consent` (et ses fichiers statiques et `/api/*`) | votre navigateur              |
-
-La page de consentement est l'application Angular complète (fichiers statiques, `/api/v1/info`, connexion OIDC...) : filtrer par chemin est donc fragile. Une alternative raisonnable est un DNS « split-horizon » : le consentement se fait depuis votre navigateur, qui peut joindre Ghostfolio en LAN, mais cela empêche le téléphone de recevoir les notifications hors du domicile. Comme le gain est faible, gardez l'exposition complète.
-
-Pour durcir sans casser quoi que ce soit : gardez le rate limiting, `TRUST_PROXY` correct, `OIDC_ALLOWED_SUBJECTS` renseigné, l'inscription désactivée, et surveillez les journaux (`docker compose logs -f ghostfolio`). Si vous utilisez la protection de Cloudflare (WAF, « Bot Fight Mode »), vérifiez qu'elle ne bloque pas les requêtes de claude.ai vers `/mcp` et `/api/v1/oauth/*`.
+Traefik, Caddy, nginx ou Cloudflare Tunnel conviennent aussi : le principe est le même (cible `http://ghostfolio:3333` sur le réseau `ghostfolio_web`, ou port publié sur l'hôte). Réglez `ROOT_URL` sur le domaine réel, laissez `ENABLE_FEATURE_HOST_VALIDATION=true`, mettez `TRUST_PROXY` au nombre de proxys devant l'application (`1` pour un seul), et **n'ajoutez aucune authentification devant le domaine** (forward-auth, Cloudflare Access, basic auth), pour la même raison que le SSO Pangolin. Les anciens fichiers Traefik, Caddy et Cloudflare Tunnel du kit ont été supprimés (ils dépendaient d'un `.env` écrit à la main).
 
 ## 4. Authentik : créer l'application
 
@@ -155,7 +159,7 @@ Les libellés ci-dessous suivent la documentation d'intégration d'Authentik ; i
    `https://auth.example.com/application/o/ghostfolio/`
    **avec le slash final**. Vérifiez-le : `curl -s https://auth.example.com/application/o/ghostfolio/.well-known/openid-configuration` doit renvoyer un JSON dont le champ `issuer` est exactement cette valeur.
 
-Renseignez dans `.env` : `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` (et `ROOT_URL`).
+Renseignez dans l'Environment de la stack Komodo : `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` (et `ROOT_URL`).
 
 ### Trouver votre `sub` pour `OIDC_ALLOWED_SUBJECTS`
 
@@ -164,11 +168,11 @@ Deux méthodes :
 - **Sans première connexion (le plus propre)** : choisissez « Based on the User's Email » comme mode du sujet dans Authentik. Le `sub` est alors votre adresse e-mail Authentik, et vous pouvez écrire dès le départ `OIDC_ALLOWED_SUBJECTS=vous@exemple.fr`. Compromis : le `sub` change si vous changez d'e-mail.
 - **Avec le mode « Hashed User ID » (défaut)** : démarrez avec les deux listes vides (la liaison Authentik de l'étape 5 vous protège pendant ce court instant), connectez-vous une fois, puis lisez le `sub` :
   ```bash
-  docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+  docker exec -i gf-postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
   SELECT id, role, "thirdPartyId" FROM "User";
   SQL
   ```
-  La colonne `thirdPartyId` vaut `<émetteur>|<sub>` ; copiez la partie après le `|` dans `OIDC_ALLOWED_SUBJECTS`, puis `docker compose up -d` pour recharger.
+  La colonne `thirdPartyId` vaut `<émetteur>|<sub>` ; copiez la partie après le `|` dans `OIDC_ALLOWED_SUBJECTS`, puis redéployez la stack dans Komodo pour recharger.
 
 Autre option : `OIDC_ALLOWED_EMAILS=vous@exemple.fr`, qui exige que le jeton contienne `email_verified=true` ; selon votre configuration Authentik ce n'est pas garanti, préférez `OIDC_ALLOWED_SUBJECTS`.
 
@@ -176,34 +180,28 @@ Si l'on définit les deux listes, un utilisateur est accepté s'il figure dans l
 
 ## 5. Premier démarrage
 
-```bash
-cd deploy/homelab
-docker compose pull          # (ou --build, voir plus haut)
-docker compose up -d
-docker compose logs -f ghostfolio
-```
-
-L'entrypoint de l'image lance tout seul `prisma migrate deploy` (y compris les migrations ajoutées par ce fork : rapports, jetons, OAuth), puis `prisma db seed`, puis le serveur. Il n'y a rien à lancer à la main ; le premier démarrage prend une à deux minutes (`start_period` du healthcheck : 90 s). Contrôle :
+Dans Komodo, **Deploy** la stack, puis suivez les journaux de `ghostfolio` (onglet Log). L'entrypoint de l'image lance tout seul `prisma migrate deploy` (y compris les migrations de ce fork : rapports, jetons, OAuth), puis `prisma db seed`, puis le serveur. Le premier démarrage prend une à deux minutes (`start_period` du healthcheck : 90 s). Contrôle :
 
 ```bash
-docker compose ps                                  # ghostfolio « healthy »
-curl -s https://ghostfolio.example.com/api/v1/health   # {"status":"OK"}
+docker ps --filter name=ghostfolio                       # ghostfolio « healthy »
+curl -s https://ghostfolio.example.com/api/v1/health     # {"status":"OK"}
 curl -s https://ghostfolio.example.com/.well-known/oauth-authorization-server | head -c 300
+curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: autre.example.org' https://ghostfolio.example.com/api/v1/health   # attendu : pas 200
 ```
 
-Le dernier appel doit renvoyer du JSON (et non une erreur 404, signe que `ENABLE_FEATURE_MCP_OAUTH` ou `ROOT_URL` en HTTPS manque).
+Le troisième appel doit renvoyer du JSON (une 404 signale `ENABLE_FEATURE_MCP_OAUTH` ou `ROOT_URL` en HTTPS manquant). Le quatrième envoie un `Host` forgé ; Pangolin peut répondre lui-même 404 avant Ghostfolio. Pour tester le contrôle de l'hôte de bout en bout, depuis l'hôte : `docker exec ghostfolio curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: autre.example.org' http://localhost:3333/api/v1/health` doit afficher `421` (alors que sans `-H`, `localhost` est accepté sur cette route de santé).
 
 ## 6. Créer le compte, devenir ADMIN, fermer l'inscription
 
 1. Ouvrez `https://ghostfolio.example.com`, cliquez sur **Connexion** puis sur le bouton OIDC (« Sign in with OpenID Connect »). Authentik vous authentifie et vous revenez dans Ghostfolio.
 2. **Le premier compte créé reçoit automatiquement le rôle `ADMIN`.** Il n'y a donc rien à faire si vous êtes le premier à vous connecter. Si un autre compte existait déjà (par exemple créé par inadvertance), promouvez le vôtre :
    ```bash
-   docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+   docker exec -i gf-postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
    UPDATE "User" SET role = 'ADMIN' WHERE "thirdPartyId" LIKE '%|<votre-sub>';
    SQL
    ```
 3. **Désactivez l'inscription** : _Administration_ (menu du compte) > _Aperçu_ > interrupteur **« Inscription de Nouveaux Utilisateurs »** (`User Signup`) sur _off_. À faire **après** votre première connexion : la connexion OIDC crée le compte à la volée et refuse la création quand l'inscription est fermée. Un compte déjà créé continue de se connecter normalement.
-4. Renseignez `OIDC_ALLOWED_SUBJECTS` (étape 4), `docker compose up -d`, puis vérifiez avec un autre compte Authentik (ou une fenêtre privée) que la connexion est refusée.
+4. Renseignez `OIDC_ALLOWED_SUBJECTS` (étape 4), redéployez la stack, puis vérifiez avec un autre compte Authentik (ou une fenêtre privée) que la connexion est refusée.
 
 À partir de là, aucun autre compte ne peut se créer ni se connecter : `OIDC_ALLOWED_SUBJECTS` s'applique même aux comptes existants.
 
@@ -258,30 +256,28 @@ Les tâches planifiées sont enregistrées côté Claude, pas dans Ghostfolio : 
 
 ## 10. Sauvegardes
 
-La base PostgreSQL contient tout (volume Docker `ghostfolio_postgres`). `backup.sh` fait un `pg_dump` compressé et garde les 14 dernières copies :
+La base PostgreSQL contient tout (volume Docker `ghostfolio_postgres`). `backup.sh` fait un `pg_dump` compressé (via `docker exec gf-postgres`, quel que soit le dossier de la stack Komodo) et garde les 14 dernières copies ; lancez-le depuis un clone du dépôt sur l'hôte :
 
 ```bash
 ./backup.sh                  # écrit dans ./backups (ignoré par git)
 ./backup.sh /mnt/nas/ghostfolio
 ```
 
-Planification par `cron` (`crontab -e`) :
+Planification par `cron` (`crontab -e`) ; Komodo propose aussi des Procedures/Actions planifiées, qui peuvent faire la même chose (non vérifié ici) :
 
 ```cron
 30 3 * * * /chemin/vers/ghostfolio/deploy/homelab/backup.sh /mnt/nas/ghostfolio >> /var/log/ghostfolio-backup.log 2>&1
 ```
 
-Copiez aussi les sauvegardes **hors de la machine**, et gardez `.env` dans votre gestionnaire de mots de passe (sans `.env`, la base seule ne suffit pas à tout rétablir : clés VAPID, salage...).
+Copiez aussi les sauvegardes **hors de la machine**, et gardez l'**Environment de la stack** (secrets, clés VAPID) dans votre gestionnaire de mots de passe : sans eux, la base seule ne suffit pas à tout rétablir.
 
-Restauration (sur une pile vide ou après `docker compose down` + suppression du volume) :
+Restauration (sur une pile vide, après avoir supprimé le volume) : déployez la stack, puis
 
 ```bash
-docker compose up -d postgres
-docker compose exec -T postgres sh -c 'pg_restore --clean --if-exists --no-owner -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < backups/ghostfolio-AAAAMMJJ-HHMMSS.dump
-docker compose up -d
+docker exec -i gf-postgres sh -c 'pg_restore --clean --if-exists --no-owner -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < backups/ghostfolio-AAAAMMJJ-HHMMSS.dump
 ```
 
-Essayez une restauration à blanc au moins une fois.
+et redéployez. Essayez une restauration à blanc au moins une fois.
 
 ## 11. Mises à jour
 
@@ -295,29 +291,24 @@ git merge upstream/main          # résoudre les conflits éventuels
 git push origin copilote         # déclenche le workflow qui publie l'image
 ```
 
-Sur le homelab, une fois le workflow terminé :
+Sur le homelab, une fois le workflow terminé : lancez `backup.sh`, puis dans Komodo **Pull** (ou « Deploy » avec récupération des images) et **Redeploy** la stack ; les migrations s'appliquent au démarrage. Pour recopier `docker-compose.yml` ou `komodo.env.example` à jour, collez-les à nouveau dans la stack (le champ Environment gardera vos valeurs si vous ne le remplacez pas ; ajoutez seulement les nouvelles variables). Komodo propose aussi l'option `auto_update` / `poll_for_updates` sur les stacks ; elle redéploie quand l'image change : à n'activer que si vous acceptez des migrations automatiques.
 
-```bash
-cd ghostfolio && git pull        # pour récupérer le kit de déploiement
-cd deploy/homelab
-./backup.sh                      # toujours sauvegarder avant
-docker compose pull
-docker compose up -d             # les migrations s'appliquent au démarrage
-docker compose logs -f ghostfolio
-```
+Pour figer ou revenir en arrière : `GHOSTFOLIO_IMAGE=ghcr.io/themlaw/ghostfolio:sha-<commit>` dans l'Environment. Les migrations Prisma ne se défont pas : pour revenir à une version plus ancienne après une migration, restaurez la sauvegarde faite avant la mise à jour.
 
-Pour figer ou revenir en arrière : mettez `GHOSTFOLIO_IMAGE=ghcr.io/themlaw/ghostfolio:sha-<commit>` dans `.env`. Les migrations Prisma ne se défont pas : pour revenir à une version plus ancienne après une migration, restaurez la sauvegarde faite avant la mise à jour.
-
-Les images PostgreSQL (15) et Redis (8) sont celles de le `docker/docker-compose.yml` amont ; ne changez pas la version majeure de PostgreSQL sans migration des données (`pg_dump` puis `pg_restore` dans une nouvelle version).
+Les images PostgreSQL (15) et Redis (8) sont celles du `docker/docker-compose.yml` amont ; ne changez pas la version majeure de PostgreSQL sans migration des données (`pg_dump` puis `pg_restore` dans une nouvelle version).
 
 ## Dépannage
 
-| Symptôme                                             | Piste                                                                                                                                                      |
-| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Retour sur `/auth?error=oidc`                        | `docker compose logs ghostfolio` ; `redirect_uri` non identique dans Authentik, `OIDC_ISSUER` sans slash final, `sub` absent de la liste, jeton illisible. |
-| Ghostfolio ne démarre pas, erreur de variable        | Variable obligatoire manquante : `ACCESS_TOKEN_SALT`, `JWT_SECRET_KEY`, et `OIDC_CLIENT_ID`/`SECRET`/`ISSUER` si l'OIDC est activé.                        |
-| Le conteneur ne joint pas Authentik                  | DNS/split-horizon depuis le conteneur : `docker compose exec ghostfolio curl -sI https://auth.example.com`.                                                |
-| `/.well-known/oauth-authorization-server` répond 404 | `ENABLE_FEATURE_MCP_OAUTH` ou `ENABLE_FEATURE_MCP` à `false`, ou `ROOT_URL` pas en HTTPS (le journal le signale).                                          |
-| claude.ai ne se connecte pas                         | Un forward-auth/Cloudflare Access/WAF devant le domaine ; `ROOT_URL` différent du domaine réellement utilisé (`/mcp` n'accepte que son hôte).              |
-| Pas de notification                                  | HTTPS, `VAPID_*` complets, PWA installée (iOS), interrupteur activé sur l'appareil, notifications autorisées dans le système.                              |
-| Rate limiting appliqué à tout le monde à la fois     | `TRUST_PROXY` incorrect : 1 proxy = `1`, Cloudflare Tunnel + proxy = `2`.                                                                                  |
+| Symptôme                                                                           | Piste                                                                                                                                                                      |
+| ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Le déploiement échoue : `required variable X is missing a value`                   | Variable obligatoire absente ou vide de l'Environment de la stack (secrets, `ROOT_URL`, `OIDC_*`, `VAPID_*`).                                                              |
+| Ghostfolio refuse de démarrer : `ENABLE_FEATURE_HOST_VALIDATION requires ROOT_URL` | `ROOT_URL` non transmis : vérifiez l'Environment.                                                                                                                          |
+| Réponse 421 sur le site                                                            | Le `Host` reçu n'est pas celui de `ROOT_URL` : « Custom Host Header » de Pangolin renseigné (ajoutez-le à `ALLOWED_HOSTS`), domaine différent de `ROOT_URL`, accès par IP. |
+| Conteneur `unhealthy`                                                              | `docker logs ghostfolio` ; migrations encore en cours (90 s), base ou Redis injoignable, mot de passe de la base différent de celui de la première initialisation.         |
+| Pangolin : 502 / cible injoignable                                                 | Newt n'est pas sur le réseau `ghostfolio_web`, ou la cible n'est pas `ghostfolio:3333`.                                                                                    |
+| Retour sur `/auth?error=oidc`                                                      | `docker logs ghostfolio` ; `redirect_uri` non identique dans Authentik, `OIDC_ISSUER` sans slash final, `sub` absent de la liste, jeton illisible.                         |
+| Le conteneur ne joint pas Authentik                                                | DNS/split-horizon depuis le conteneur : `docker exec ghostfolio curl -sI https://auth.example.com`.                                                                        |
+| `/.well-known/oauth-authorization-server` répond 404                               | `ENABLE_FEATURE_MCP_OAUTH` ou `ENABLE_FEATURE_MCP` à `false`, ou `ROOT_URL` pas en HTTPS (le journal le signale).                                                          |
+| claude.ai ne se connecte pas                                                       | SSO Pangolin actif sur la ressource sans règles de contournement, WAF, ou `ROOT_URL` différent du domaine utilisé (`/mcp` n'accepte que son hôte).                         |
+| Pas de notification                                                                | HTTPS, `VAPID_*` complets, PWA installée (iOS), interrupteur activé sur l'appareil, notifications autorisées dans le système.                                              |
+| Rate limiting appliqué à tout le monde à la fois                                   | `TRUST_PROXY` incorrect (voir la section « TRUST_PROXY »).                                                                                                                 |
