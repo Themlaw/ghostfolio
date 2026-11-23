@@ -2,6 +2,7 @@ import { CleanedEnvAccessors } from 'envalid';
 
 export interface Environment extends CleanedEnvAccessors {
   ACCESS_TOKEN_SALT: string;
+  ALLOWED_HOSTS: string;
   API_KEY_ALPHA_VANTAGE: string;
   API_KEY_BETTER_UPTIME: string;
   API_KEY_COINGECKO_DEMO: string;
@@ -23,6 +24,7 @@ export interface Environment extends CleanedEnvAccessors {
   ENABLE_FEATURE_CRON: boolean;
   ENABLE_FEATURE_FEAR_AND_GREED_INDEX: boolean;
   ENABLE_FEATURE_GATHER_NEW_EXCHANGE_RATES: boolean;
+  ENABLE_FEATURE_HOST_VALIDATION: boolean;
   ENABLE_FEATURE_MCP: boolean;
   ENABLE_FEATURE_MCP_OAUTH: boolean;
   ENABLE_FEATURE_RATE_LIMITING: boolean;

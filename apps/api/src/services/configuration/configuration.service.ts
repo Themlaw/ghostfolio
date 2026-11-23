@@ -45,6 +45,7 @@ export class ConfigurationService {
   public constructor() {
     this.environmentConfiguration = cleanEnv(process.env, {
       ACCESS_TOKEN_SALT: str(),
+      ALLOWED_HOSTS: str({ default: '' }),
       API_KEY_ALPHA_VANTAGE: str({ default: '' }),
       API_KEY_BETTER_UPTIME: str({ default: '' }),
       API_KEY_COINGECKO_DEMO: str({ default: '' }),
@@ -72,6 +73,7 @@ export class ConfigurationService {
       ENABLE_FEATURE_CRON: bool({ default: true }),
       ENABLE_FEATURE_FEAR_AND_GREED_INDEX: bool({ default: false }),
       ENABLE_FEATURE_GATHER_NEW_EXCHANGE_RATES: bool({ default: true }),
+      ENABLE_FEATURE_HOST_VALIDATION: bool({ default: false }),
       // TODO: Change the default to true, when the server of the Model Context
       // Protocol (MCP) was moved from experimental to general availability
       ENABLE_FEATURE_MCP: bool({ default: false }),

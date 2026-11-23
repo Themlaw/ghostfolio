@@ -317,7 +317,7 @@ export class OAuthService {
       where: { hash: hashOAuthSecret(refreshToken) }
     });
 
-    if (!token || token.type !== 'REFRESH' || token.clientId !== clientId) {
+    if (token?.type !== 'REFRESH' || token.clientId !== clientId) {
       throw new OAuthException('invalid_grant', 'The refresh token is invalid');
     }
 
@@ -494,8 +494,7 @@ export class OAuthService {
     });
 
     if (
-      !token ||
-      token.type !== 'ACCESS' ||
+      token?.type !== 'ACCESS' ||
       token.revokedAt ||
       token.expiresAt.getTime() <= Date.now() ||
       token.resource !== getMcpResourceIdentifier(this.configurationService)

@@ -1,6 +1,7 @@
 import { OAuthService } from '@ghostfolio/api/app/endpoints/oauth/oauth.service';
 import { isValidMcpOAuthIssuerUrl } from '@ghostfolio/api/helper/mcp-oauth.helper';
 import { getHelmetOptions } from '@ghostfolio/api/helper/security-headers.helper';
+import { createHostValidationMiddleware } from '@ghostfolio/api/middlewares/host-validation.middleware';
 import { languageRedirectMiddleware } from '@ghostfolio/api/middlewares/language-redirect.middleware';
 import { createMcpAuthorizationMiddleware } from '@ghostfolio/api/middlewares/mcp-authorization.middleware';
 import { ConfigurationService } from '@ghostfolio/api/services/configuration/configuration.service';
@@ -69,6 +70,31 @@ async function bootstrap() {
         : ['debug', 'error', 'log', 'verbose', 'warn'])
   });
 
+  const configurationService = app.get(ConfigurationService);
+
+  if (configurationService.get('ENABLE_FEATURE_HOST_VALIDATION')) {
+    // Refuse to start instead of disabling the protection silently: the
+    // operator asked for it explicitly, and ROOT_URL is its reference
+    if (!process.env.ROOT_URL) {
+      logger.error(
+        'ENABLE_FEATURE_HOST_VALIDATION is enabled, but ROOT_URL is not set. Set ROOT_URL to the public URL of the instance or disable the host validation.'
+      );
+
+      throw new Error(
+        'ENABLE_FEATURE_HOST_VALIDATION requires ROOT_URL to be set'
+      );
+    }
+
+    // Registered first, so that no other middleware or route handles a
+    // request with an unexpected Host header
+    app.use(
+      createHostValidationMiddleware({
+        allowedHosts: configurationService.get('ALLOWED_HOSTS'),
+        rootUrl: configurationService.get('ROOT_URL')
+      })
+    );
+  }
+
   app.enableCors();
 
   // Let the open requests and the active queue jobs finish on SIGINT and
@@ -106,8 +132,6 @@ async function bootstrap() {
   app.useBodyParser('json', { limit: '10mb' });
 
   app.use(cookieParser());
-
-  const configurationService = app.get(ConfigurationService);
 
   const isSubscriptionEnabled =
     configService.get<string>('ENABLE_FEATURE_SUBSCRIPTION') === 'true';
