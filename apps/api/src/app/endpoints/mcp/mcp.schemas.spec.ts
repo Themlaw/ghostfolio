@@ -11,12 +11,17 @@ import {
 import { DataSource } from '@prisma/client';
 
 import {
+  CREATE_ACCOUNT_PARAMETERS,
+  GATHER_MARKET_DATA_PARAMETERS,
   GET_ACCOUNTS_PARAMETERS,
   GET_ACTIVITIES_PARAMETERS,
+  GET_MARKET_DATA_PARAMETERS,
   GET_PERFORMANCE_PARAMETERS,
   IMPORT_ACTIVITIES_PARAMETERS,
   SEARCH_ASSET_PROFILES_PARAMETERS,
-  UPDATE_ACCOUNT_BALANCE_PARAMETERS
+  UPDATE_ACCOUNT_BALANCE_PARAMETERS,
+  UPDATE_ACCOUNT_PARAMETERS,
+  UPDATE_ACTIVITY_PARAMETERS
 } from './mcp.schemas';
 import { createActivity } from './mcp.test-utils';
 
@@ -360,5 +365,164 @@ describe('UPDATE_ACCOUNT_BALANCE_PARAMETERS', () => {
 
   it('Refuses a date in the future', () => {
     expect(parse({ date: '2026-09-05' })).toBe(false);
+  });
+});
+
+describe('CREATE_ACCOUNT_PARAMETERS', () => {
+  function parse(parameters: Record<string, unknown>) {
+    return CREATE_ACCOUNT_PARAMETERS.safeParse({
+      currency: 'EUR',
+      name: 'Broker',
+      ...parameters
+    }).success;
+  }
+
+  it('Accepts a name, a currency, a platform and a balance', () => {
+    expect(parse({ balance: 100, platform: 'Interactive Brokers' })).toBe(true);
+  });
+
+  it('Refuses an unknown currency', () => {
+    expect(parse({ currency: 'XXY' })).toBe(false);
+  });
+
+  it('Refuses a currency in lower case', () => {
+    expect(parse({ currency: 'eur' })).toBe(false);
+  });
+
+  it('Refuses an empty name', () => {
+    expect(parse({ name: '  ' })).toBe(false);
+  });
+});
+
+describe('UPDATE_ACCOUNT_PARAMETERS', () => {
+  it('Accepts a platform of null to remove it', () => {
+    expect(
+      UPDATE_ACCOUNT_PARAMETERS.safeParse({ id: 'account-id', platform: null })
+        .success
+    ).toBe(true);
+  });
+
+  it('Refuses an unknown currency', () => {
+    expect(
+      UPDATE_ACCOUNT_PARAMETERS.safeParse({ currency: 'XXY', id: 'account-id' })
+        .success
+    ).toBe(false);
+  });
+
+  it('Refuses a missing identifier', () => {
+    expect(UPDATE_ACCOUNT_PARAMETERS.safeParse({ name: 'Name' }).success).toBe(
+      false
+    );
+  });
+});
+
+describe('UPDATE_ACTIVITY_PARAMETERS', () => {
+  function parse(parameters: Record<string, unknown>) {
+    return UPDATE_ACTIVITY_PARAMETERS.safeParse({
+      id: 'activity-id',
+      ...parameters
+    }).success;
+  }
+
+  it('Accepts each field which can change', () => {
+    expect(
+      parse({
+        accountId: null,
+        comment: 'Comment',
+        currency: 'USD',
+        date: '2024-01-01',
+        fee: 0,
+        quantity: 1,
+        unitPrice: 10
+      })
+    ).toBe(true);
+  });
+
+  it('Refuses a negative quantity, unit price or fee', () => {
+    expect(parse({ quantity: -1 })).toBe(false);
+    expect(parse({ unitPrice: -1 })).toBe(false);
+    expect(parse({ fee: -1 })).toBe(false);
+  });
+
+  it('Refuses a date at or before the epoch', () => {
+    expect(parse({ date: '1970-01-01' })).toBe(false);
+  });
+
+  it('Refuses an unknown currency', () => {
+    expect(parse({ currency: 'XXY' })).toBe(false);
+  });
+
+  it('Refuses a comment which is too long', () => {
+    expect(parse({ comment: 'a'.repeat(COMMENT_MAXIMUM_LENGTH + 1) })).toBe(
+      false
+    );
+  });
+
+  it('Refuses a missing identifier', () => {
+    expect(UPDATE_ACTIVITY_PARAMETERS.safeParse({ quantity: 1 }).success).toBe(
+      false
+    );
+  });
+});
+
+describe('GATHER_MARKET_DATA_PARAMETERS', () => {
+  it('Gathers the recent market data by default', () => {
+    expect(
+      GATHER_MARKET_DATA_PARAMETERS.parse({
+        dataSource: DataSource.YAHOO,
+        symbol: 'AAPL'
+      }).fullHistory
+    ).toBe(false);
+  });
+
+  it('Refuses an unknown data source', () => {
+    expect(
+      GATHER_MARKET_DATA_PARAMETERS.safeParse({
+        dataSource: UNKNOWN_ENCODED_DATA_SOURCE,
+        symbol: 'AAPL'
+      }).success
+    ).toBe(false);
+  });
+});
+
+describe('GET_MARKET_DATA_PARAMETERS', () => {
+  it('Uses the default date range', () => {
+    expect(
+      GET_MARKET_DATA_PARAMETERS.parse({
+        dataSource: DataSource.YAHOO,
+        symbol: 'AAPL'
+      }).range
+    ).toBe(DEFAULT_DATE_RANGE);
+  });
+
+  it('Accepts a date range and a calendar year', () => {
+    for (const range of [
+      '1d',
+      '1y',
+      '5y',
+      'max',
+      'mtd',
+      'wtd',
+      'ytd',
+      '2024'
+    ]) {
+      expect(
+        GET_MARKET_DATA_PARAMETERS.safeParse({
+          range,
+          dataSource: DataSource.YAHOO,
+          symbol: 'AAPL'
+        }).success
+      ).toBe(true);
+    }
+  });
+
+  it('Refuses an unknown date range', () => {
+    expect(
+      GET_MARKET_DATA_PARAMETERS.safeParse({
+        dataSource: DataSource.YAHOO,
+        range: '10y',
+        symbol: 'AAPL'
+      }).success
+    ).toBe(false);
   });
 });

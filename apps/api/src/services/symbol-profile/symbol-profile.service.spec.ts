@@ -6,6 +6,44 @@ import { DataSource } from '@prisma/client';
 import { SymbolProfileService } from './symbol-profile.service';
 
 describe('SymbolProfileService', () => {
+  describe('getSymbolProfileOfUser', () => {
+    it('only gives an asset profile of an investment activity or of the watchlist of the user', async () => {
+      const findFirst = jest.fn().mockResolvedValue(null);
+
+      const symbolProfileService = new SymbolProfileService({
+        symbolProfile: { findFirst }
+      } as unknown as PrismaService);
+
+      await expect(
+        symbolProfileService.getSymbolProfileOfUser({
+          dataSource: DataSource.YAHOO,
+          symbol: 'AAPL',
+          userId: 'user-id'
+        })
+      ).resolves.toBeNull();
+
+      expect(findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            dataSource: DataSource.YAHOO,
+            symbol: 'AAPL',
+            OR: [
+              {
+                activities: {
+                  some: {
+                    type: { in: INVESTMENT_ACTIVITY_TYPES },
+                    userId: 'user-id'
+                  }
+                }
+              },
+              { watchedBy: { some: { id: 'user-id' } } }
+            ]
+          }
+        })
+      );
+    });
+  });
+
   describe('getSymbolProfilesOfUser', () => {
     const userId = 'user-id';
 

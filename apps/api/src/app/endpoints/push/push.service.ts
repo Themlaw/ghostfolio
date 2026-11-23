@@ -43,6 +43,14 @@ export class PushService {
     private readonly prismaService: PrismaService
   ) {}
 
+  /**
+   * Gives the number of the devices of the user which are subscribed to the
+   * notifications. It never exposes the endpoint or the keys of a device.
+   */
+  public async getSubscriptionCount({ userId }: { userId: string }) {
+    return this.prismaService.pushSubscription.count({ where: { userId } });
+  }
+
   public getVapidPublicKey() {
     return this.isConfigured()
       ? this.configurationService.get('VAPID_PUBLIC_KEY')

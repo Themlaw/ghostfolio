@@ -45,6 +45,64 @@ const HOLDING_PARAMETER = z.object({
   symbol: SYMBOL_PARAMETER
 });
 
+const CURRENCY_PARAMETER = z
+  .string()
+  .refine(isValidCurrencyCode)
+  .describe('An ISO 4217 currency code in upper case, for example EUR or USD');
+
+const ACCOUNT_NAME_PARAMETER = z
+  .string()
+  .trim()
+  .min(1)
+  .max(100)
+  .describe('The name of the account');
+
+const PLATFORM_PARAMETER = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .describe(
+    'The name or the identifier of an existing platform, for example Interactive Brokers. An unknown platform is refused and the error lists the available platforms'
+  );
+
+const ACTIVITY_ID_PARAMETER = z
+  .string()
+  .min(1)
+  .max(100)
+  .describe(
+    'The identifier of the activity, which get-activities or import-activities give'
+  );
+
+export const CREATE_ACCOUNT_PARAMETERS = z.object({
+  balance: z
+    .number()
+    .optional()
+    .describe(
+      'The initial cash balance of the account in its currency, stored as the cash balance of today'
+    ),
+  currency: CURRENCY_PARAMETER.describe(
+    'The currency of the account, as an ISO 4217 code in upper case'
+  ),
+  name: ACCOUNT_NAME_PARAMETER,
+  platform: PLATFORM_PARAMETER.optional()
+});
+
+export const DELETE_ACTIVITY_PARAMETERS = z.object({
+  id: ACTIVITY_ID_PARAMETER
+});
+
+export const GATHER_MARKET_DATA_PARAMETERS = z.object({
+  dataSource: DATA_SOURCE_PARAMETER,
+  fullHistory: z
+    .boolean()
+    .default(false)
+    .describe(
+      'Gather the whole history since the first activity of the portfolio. Otherwise only the last 30 days are gathered'
+    ),
+  symbol: SYMBOL_PARAMETER
+});
+
 export const GET_ACCOUNTS_PARAMETERS = z.object({
   accountIds: z
     .array(z.string().min(1))
@@ -130,6 +188,20 @@ export const GET_PERFORMANCE_PARAMETERS = z.object({
     )
 });
 
+export const GET_MARKET_DATA_PARAMETERS = z.object({
+  dataSource: DATA_SOURCE_PARAMETER,
+  range: z
+    .string()
+    .regex(DATE_RANGE_PATTERN)
+    .default(DEFAULT_DATE_RANGE)
+    .describe(
+      `The date range of the market prices, either ${DATE_RANGES.join(
+        ', '
+      )} or a calendar year like 2024`
+    ),
+  symbol: SYMBOL_PARAMETER
+});
+
 export const IMPORT_ACTIVITIES_PARAMETERS = z.object({
   activities: z
     .array(
@@ -179,6 +251,61 @@ export const SEARCH_ASSET_PROFILES_PARAMETERS = z.object({
     .describe(
       'The name, ticker symbol or ISIN of the financial asset, for example Apple, AAPL, Bitcoin or US0378331005'
     )
+});
+
+export const UPDATE_ACCOUNT_PARAMETERS = z.object({
+  currency: CURRENCY_PARAMETER.optional().describe(
+    'The new currency of the account, as an ISO 4217 code in upper case'
+  ),
+  id: z
+    .string()
+    .min(1)
+    .describe('The identifier of the account, which get-accounts gives'),
+  name: ACCOUNT_NAME_PARAMETER.optional(),
+  platform: PLATFORM_PARAMETER.nullable()
+    .optional()
+    .describe(
+      'The name or the identifier of an existing platform. Null removes the platform of the account. Omit it to keep the platform'
+    )
+});
+
+export const UPDATE_ACTIVITY_PARAMETERS = z.object({
+  accountId: z
+    .string()
+    .min(1)
+    .nullable()
+    .optional()
+    .describe(
+      'The identifier of the account of the activity. Null removes the account. Omit it to keep the account'
+    ),
+  comment: z
+    .string()
+    .trim()
+    .max(COMMENT_MAXIMUM_LENGTH)
+    .optional()
+    .describe('The new comment of the activity, an empty text removes it'),
+  currency: CURRENCY_PARAMETER.optional().describe(
+    'The new currency of the fee and of the unit price, as an ISO 4217 code in upper case'
+  ),
+  date: z
+    .string()
+    .refine(isValidDateAfter1970)
+    .optional()
+    .describe(
+      'The new date of the activity, as an ISO 8601 date or date and time'
+    ),
+  fee: z.number().min(0).optional().describe('The new fee of the activity'),
+  id: ACTIVITY_ID_PARAMETER,
+  quantity: z
+    .number()
+    .min(0)
+    .optional()
+    .describe('The new quantity of the activity'),
+  unitPrice: z
+    .number()
+    .min(0)
+    .optional()
+    .describe('The new unit price of the activity')
 });
 
 export const UPDATE_ACCOUNT_BALANCE_PARAMETERS = z.object({

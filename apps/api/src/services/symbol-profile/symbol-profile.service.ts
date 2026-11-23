@@ -187,6 +187,41 @@ export class SymbolProfileService {
   }
 
   /**
+   * Gives the currency, the data source, the symbol, whether the asset profile
+   * is active and its scraper configuration, if the asset profile is in the
+   * portfolio of the user (an investment activity, also of a closed position
+   * or of an excluded account) or in the watchlist of the user. Otherwise it
+   * gives null, hence it does not tell whether the asset profile exists.
+   */
+  public async getSymbolProfileOfUser({
+    dataSource,
+    symbol,
+    userId
+  }: AssetProfileIdentifier & { userId: string }) {
+    return this.prismaService.symbolProfile.findFirst({
+      select: {
+        currency: true,
+        dataSource: true,
+        isActive: true,
+        scraperConfiguration: true,
+        symbol: true
+      },
+      where: {
+        dataSource,
+        symbol,
+        OR: [
+          {
+            activities: {
+              some: { userId, type: { in: INVESTMENT_ACTIVITY_TYPES } }
+            }
+          },
+          { watchedBy: { some: { id: userId } } }
+        ]
+      }
+    });
+  }
+
+  /**
    * Gives the currency, the data source, the ISIN, the name and the symbol of
    * the active asset profiles of the investment activities of the user, also
    * of the closed positions and of the excluded accounts, with the overrides.

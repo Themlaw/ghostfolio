@@ -1770,14 +1770,6 @@
           <context context-type="linenumber">963</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="772779777419729520" datatype="html">
-        <source>Without this option, the application may also create reports, create activities, update account balances and send notifications.</source>
-        <target state="new">Without this option, the application may also create reports, create activities, update account balances and send notifications.</target>
-        <context-group purpose="location">
-          <context context-type="sourcefile">apps/client/src/app/pages/oauth/oauth-consent-page.html</context>
-          <context context-type="linenumber">60</context>
-        </context-group>
-      </trans-unit>
       <trans-unit id="774722884061553775" datatype="html">
         <source>Update platform</source>
         <target state="translated">Actualitzar plataforma</target>
@@ -5401,6 +5393,14 @@
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/file-drop-area/file-drop-area.component.html</context>
           <context context-type="linenumber">20</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="4165979777500407682" datatype="html">
+        <source>Without this option, the application may also create reports, create and update accounts, create, update and delete activities, update account balances and send notifications.</source>
+        <target state="new">Without this option, the application may also create reports, create and update accounts, create, update and delete activities, update account balances and send notifications.</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/pages/oauth/oauth-consent-page.html</context>
+          <context context-type="linenumber">60</context>
         </context-group>
       </trans-unit>
       <trans-unit id="5747722179752261472" datatype="html">

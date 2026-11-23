@@ -368,6 +368,16 @@ describe('PortfolioTableService', () => {
     });
   });
 
+  describe('getMarketDataTableColumnNames', () => {
+    it('gives the date, the market price and the currency', () => {
+      expect(PortfolioTableService.getMarketDataTableColumnNames()).toEqual([
+        'Date',
+        'Market Price',
+        'Currency'
+      ]);
+    });
+  });
+
   describe('getWatchlistTableColumnNames', () => {
     it('gives no column with a monetary value', () => {
       expect(PortfolioTableService.getWatchlistTableColumnNames()).toEqual([
@@ -689,6 +699,50 @@ describe('PortfolioTableService', () => {
       });
 
       expect(row).toMatch(/\| 75\.000% \| 5 \| 2000\.00 \|$/);
+    });
+  });
+
+  describe('getMarketDataTable', () => {
+    it('gives a row with the date, the market price and the currency', async () => {
+      const result = await createPortfolioTableService().getMarketDataTable({
+        currency: 'USD',
+        marketData: [
+          { date: new Date('2024-01-02T00:00:00.000Z'), marketPrice: 101.5 },
+          { date: new Date('2024-01-03T00:00:00.000Z'), marketPrice: 102 }
+        ],
+        numberOfMarketPrices: 2
+      });
+
+      expect(result).toContain('| Date | Market Price | Currency |');
+      expect(result).toContain('| 2024-01-02 | 101.5 | USD |');
+      expect(result).toContain('| 2024-01-03 | 102 | USD |');
+      expect(result).toContain('Showing all 2 market prices');
+    });
+
+    it('tells the sampling of a long range', async () => {
+      const result = await createPortfolioTableService().getMarketDataTable({
+        currency: 'USD',
+        marketData: [
+          { date: new Date('2024-01-05T00:00:00.000Z'), marketPrice: 100 }
+        ],
+        numberOfMarketPrices: 700,
+        sampling: 'weekly'
+      });
+
+      expect(result).toContain(
+        'Showing 1 of 700 market prices, the last market price of each week'
+      );
+    });
+
+    it('tells that no market data are found', async () => {
+      const result = await createPortfolioTableService().getMarketDataTable({
+        currency: 'USD',
+        marketData: [],
+        numberOfMarketPrices: 0
+      });
+
+      expect(result).toContain('No market data found');
+      expect(result).toContain('gather-market-data');
     });
   });
 

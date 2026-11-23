@@ -10,13 +10,18 @@ import type { ImpersonationContext } from '@ghostfolio/common/types';
 import { UseFilters } from '@nestjs/common';
 import { Payload } from '@nestjs/microservices';
 import { McpController, Tool } from '@rekog/mcp-nest';
+import ms from 'ms';
 import { z } from 'zod';
 import 'zod/compile';
 
 import {
+  CREATE_ACCOUNT_PARAMETERS,
+  DELETE_ACTIVITY_PARAMETERS,
+  GATHER_MARKET_DATA_PARAMETERS,
   GET_ACCOUNTS_PARAMETERS,
   GET_ACTIVITIES_PARAMETERS,
   GET_DECISION_ANSWERS_PARAMETERS,
+  GET_MARKET_DATA_PARAMETERS,
   GET_PERFORMANCE_PARAMETERS,
   GET_REPORT_PARAMETERS,
   GET_REPORTS_PARAMETERS,
@@ -25,9 +30,15 @@ import {
   SEARCH_ASSET_PROFILES_PARAMETERS,
   SEND_NOTIFICATION_PARAMETERS,
   UPDATE_ACCOUNT_BALANCE_PARAMETERS,
+  UPDATE_ACCOUNT_PARAMETERS,
+  UPDATE_ACTIVITY_PARAMETERS,
   UPDATE_REPORT_PARAMETERS
 } from './mcp.schemas';
-import { McpService } from './mcp.service';
+import {
+  GATHER_MARKET_DATA_INTERVAL,
+  MARKET_DATA_MAX_POINTS,
+  McpService
+} from './mcp.service';
 
 @McpController()
 @UseFilters(McpToolExceptionFilter)
@@ -221,6 +232,159 @@ export class GhostfolioMcpController {
     return this.mcpService.updateAccountBalance({ ...parameters, userId });
   }
 
+  @RequiresScopeOfAccess(scopes.accountCreate)
+  @Tool({
+    annotations: {
+      destructiveHint: false,
+      openWorldHint: false,
+      readOnlyHint: false,
+      title: 'Create account'
+    },
+    description:
+      'Creates an account of the user with a name, a currency, an optional platform and an optional initial cash balance, and gives the identifier, the name, the currency and the platform of the account. The currency is an ISO 4217 code in upper case. The platform is the name or the identifier of an existing platform, and an unknown platform is refused with the list of the available platforms. The initial cash balance is in the currency of the account and is stored as the cash balance of today. Each call creates a new account, hence check with get-accounts whether the account exists.',
+    name: 'create-account',
+    parameters: CREATE_ACCOUNT_PARAMETERS
+  })
+  public async createAccount(
+    @Impersonation() { userId }: ImpersonationContext,
+    @Payload() parameters: z.infer<typeof CREATE_ACCOUNT_PARAMETERS>
+  ) {
+    return this.mcpService.createAccount({ ...parameters, userId });
+  }
+
+  @RequiresScopeOfAccess(scopes.accountUpdate)
+  @Tool({
+    annotations: {
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+      readOnlyHint: false,
+      title: 'Update account'
+    },
+    description:
+      'Updates the name, the currency or the platform of an account of the user, which replace the previous value. A field which is omitted stays as it is, and a platform of null removes the platform. The platform is the name or the identifier of an existing platform. It does not change the cash balance, which update-account-balance sets. Only an account of the user can be updated.',
+    name: 'update-account',
+    parameters: UPDATE_ACCOUNT_PARAMETERS
+  })
+  public async updateAccount(
+    @Impersonation() { userId }: ImpersonationContext,
+    @Payload() parameters: z.infer<typeof UPDATE_ACCOUNT_PARAMETERS>
+  ) {
+    return this.mcpService.updateAccount({ ...parameters, userId });
+  }
+
+  @RequiresScopeOfAccess(scopes.activityUpdate, scopes.portfolioReadValues)
+  @Tool({
+    annotations: {
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+      readOnlyHint: false,
+      title: 'Update activity'
+    },
+    description:
+      'Updates fields of an activity of the user, which replace the previous value: the date, the quantity, the unit price, the fee, the currency, the account and the comment. A field which is omitted stays as it is, an account of null removes the account and an empty comment removes the comment. The type, the symbol and the data source of an activity cannot be changed, hence delete the activity with delete-activity and import it again with import-activities instead. The unit price and the fee are in the currency of the activity. The portfolio is recalculated after the change. Use get-activities to get the identifier of the activity.',
+    name: 'update-activity',
+    parameters: UPDATE_ACTIVITY_PARAMETERS
+  })
+  public async updateActivity(
+    @Impersonation()
+    { scopes: impersonationScopes, userId }: ImpersonationContext,
+    @Payload() parameters: z.infer<typeof UPDATE_ACTIVITY_PARAMETERS>
+  ) {
+    return this.mcpService.updateActivity({
+      ...parameters,
+      userId,
+      withValues: this.hasScopeToReadValues(impersonationScopes)
+    });
+  }
+
+  @RequiresScopeOfAccess(scopes.activityDelete, scopes.portfolioReadValues)
+  @Tool({
+    annotations: {
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+      readOnlyHint: false,
+      title: 'Delete activity'
+    },
+    description:
+      'Deletes an activity of the user permanently and gives the deleted activity. The portfolio is recalculated after the deletion. An asset profile without other activity, without a watchlist item and without a benchmark role is deleted with its market data. Use get-activities to get the identifier of the activity, and confirm with the user before you delete an activity.',
+    name: 'delete-activity',
+    parameters: DELETE_ACTIVITY_PARAMETERS
+  })
+  public async deleteActivity(
+    @Impersonation()
+    { scopes: impersonationScopes, userId }: ImpersonationContext,
+    @Payload() parameters: z.infer<typeof DELETE_ACTIVITY_PARAMETERS>
+  ) {
+    return this.mcpService.deleteActivity({
+      ...parameters,
+      userId,
+      withValues: this.hasScopeToReadValues(impersonationScopes)
+    });
+  }
+
+  @RequiresScopeOfAccess(scopes.activityCreate)
+  @Tool({
+    annotations: {
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+      readOnlyHint: false,
+      title: 'Gather market data'
+    },
+    description: `Queues the gathering of the market prices of an asset profile from its data provider, like the button to gather the data of an asset profile does, and gives what was queued. The gathering runs in the background, hence read the market prices with get-market-data a few minutes later. Only an asset profile which is in the portfolio (an activity) or in the watchlist of the user is accepted. The gathering covers the last 30 days, or the whole history since the first activity of the portfolio with fullHistory. The market prices which the data provider gives replace the stored ones. The same user can gather the same asset profile once per ${ms(
+      GATHER_MARKET_DATA_INTERVAL,
+      { long: true }
+    )}, and a further call in this interval is refused.`,
+    name: 'gather-market-data',
+    parameters: GATHER_MARKET_DATA_PARAMETERS
+  })
+  public async gatherMarketData(
+    @Impersonation() { userId }: ImpersonationContext,
+    @Payload() parameters: z.infer<typeof GATHER_MARKET_DATA_PARAMETERS>
+  ) {
+    return this.mcpService.gatherMarketData({ ...parameters, userId });
+  }
+
+  @RequiresScopeOfAccess(scopes.portfolioRead)
+  @Tool({
+    annotations: {
+      openWorldHint: false,
+      readOnlyHint: true,
+      title: 'Get market data'
+    },
+    description: `Gives the stored market prices of an asset profile in the date range, the oldest first, with these columns: ${PortfolioTableService.getMarketDataTableColumnNames().join(
+      ', '
+    )}. It reads the database and does not call the data provider, hence use gather-market-data if the market prices are missing or outdated. Only an asset profile which is in the portfolio or in the watchlist of the user is accepted. A market price is not a value of the portfolio, hence an access without the permission to read the values gets it as well. At most ${MARKET_DATA_MAX_POINTS} market prices are given: a longer range gives the last market price of each week, or of each month if that is still too long. Use get-portfolio or get-watchlist to get the data source and the symbol.`,
+    name: 'get-market-data',
+    parameters: GET_MARKET_DATA_PARAMETERS
+  })
+  public async getMarketData(
+    @Impersonation() { userId }: ImpersonationContext,
+    @Payload() parameters: z.infer<typeof GET_MARKET_DATA_PARAMETERS>
+  ) {
+    return this.mcpService.getMarketData({ ...parameters, userId });
+  }
+
+  @RequiresScopeOfAccess(scopes.notificationCreate)
+  @Tool({
+    annotations: {
+      openWorldHint: false,
+      readOnlyHint: true,
+      title: 'Get notification status'
+    },
+    description:
+      'Gives the number of the devices of the user which are subscribed to the notifications and whether the instance has the keys (VAPID) to send them. It never gives the endpoint or the keys of a device. Check it before send-notification: without a subscribed device, a notification reaches nobody.',
+    name: 'get-notification-status'
+  })
+  public async getNotificationStatus(
+    @Impersonation() { userId }: ImpersonationContext
+  ) {
+    return this.mcpService.getNotificationStatus({ userId });
+  }
+
   @RequiresScopeOfAccess(scopes.reportRead)
   @Tool({
     annotations: {
@@ -324,7 +488,7 @@ export class GhostfolioMcpController {
       title: 'Send notification'
     },
     description:
-      'Sends a push notification with a title, a text and an optional URL to the devices of the user. Use it sparingly, only for what the user has to see soon.',
+      'Sends a push notification with a title, a text and an optional URL to the devices of the user, and gives the number of the devices which it reached. If the number is 0, no device is subscribed (or the delivery failed) and the user has to enable the notifications in the application, which get-notification-status tells beforehand. Use it sparingly, only for what the user has to see soon.',
     name: 'send-notification',
     parameters: SEND_NOTIFICATION_PARAMETERS
   })

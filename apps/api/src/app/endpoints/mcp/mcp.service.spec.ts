@@ -4,11 +4,16 @@ import { CallerFacingError } from '@ghostfolio/api/errors/caller-facing.error';
 import { encodeDataSource } from '@ghostfolio/api/helper/data-source.helper';
 import { AccountBalanceService } from '@ghostfolio/api/services/account-balance/account-balance.service';
 import { AccountService } from '@ghostfolio/api/services/account/account.service';
+import { ActivitiesService } from '@ghostfolio/api/services/activities/activities.service';
 import { ApiService } from '@ghostfolio/api/services/api/api.service';
 import { ConfigurationService } from '@ghostfolio/api/services/configuration/configuration.service';
 import { ImportValidationError } from '@ghostfolio/api/services/import/errors/import-validation.error';
 import { ImportService } from '@ghostfolio/api/services/import/import.service';
+import { MarketDataService } from '@ghostfolio/api/services/market-data/market-data.service';
+import { PlatformService } from '@ghostfolio/api/services/platform/platform.service';
 import { PortfolioTableService } from '@ghostfolio/api/services/portfolio-table/portfolio-table.service';
+import { DataGatheringService } from '@ghostfolio/api/services/queues/data-gathering/data-gathering.service';
+import { RedisCacheService } from '@ghostfolio/api/services/redis-cache/redis-cache.service';
 import { SymbolProfileService } from '@ghostfolio/api/services/symbol-profile/symbol-profile.service';
 import { SymbolService } from '@ghostfolio/api/services/symbol/symbol.service';
 import { UserService } from '@ghostfolio/api/services/user/user.service';
@@ -31,7 +36,11 @@ import {
   Type as ActivityType
 } from '@prisma/client';
 
-import { McpService } from './mcp.service';
+import {
+  GATHER_MARKET_DATA_INTERVAL,
+  MARKET_DATA_MAX_POINTS,
+  McpService
+} from './mcp.service';
 import { createActivity } from './mcp.test-utils';
 
 describe('McpService', () => {
@@ -41,13 +50,19 @@ describe('McpService', () => {
 
   let accountBalanceService: AccountBalanceService;
   let accountService: AccountService;
+  let activitiesService: ActivitiesService;
   let apiService: ApiService;
   let configuration: Record<string, unknown>;
   let configurationService: ConfigurationService;
+  let dataGatheringService: DataGatheringService;
   let importService: ImportService;
+  let marketDataService: MarketDataService;
   let mcpService: McpService;
+  let platformService: PlatformService;
   let portfolioTableService: PortfolioTableService;
   let pushService: PushService;
+  let redisCache: Map<string, string>;
+  let redisCacheService: RedisCacheService;
   let reportsService: ReportsService;
   let symbolProfileService: SymbolProfileService;
   let symbolService: SymbolService;
@@ -81,28 +96,81 @@ describe('McpService', () => {
       createOrUpdateAccountBalance: jest.fn()
     } as unknown as AccountBalanceService;
 
-    accountService = { account: jest.fn() } as unknown as AccountService;
+    accountService = {
+      account: jest.fn(),
+      createAccount: jest.fn().mockResolvedValue({
+        currency: 'EUR',
+        id: 'new-account-id',
+        name: 'Broker'
+      }),
+      updateAccount: jest.fn().mockResolvedValue({
+        currency: 'EUR',
+        id: 'account-id',
+        name: 'Broker',
+        platformId: null
+      })
+    } as unknown as AccountService;
+
+    activitiesService = {
+      deleteActivity: jest.fn(),
+      order: jest.fn(),
+      updateActivity: jest.fn()
+    } as unknown as ActivitiesService;
 
     apiService = {
       buildFiltersFromQueryParams: jest.fn().mockReturnValue(filters)
     } as unknown as ApiService;
 
+    dataGatheringService = {
+      gatherSymbol: jest
+        .fn()
+        .mockResolvedValue([{ data: { date: new Date('2024-01-01') } }])
+    } as unknown as DataGatheringService;
+
     importService = {
       import: jest.fn().mockResolvedValue([])
     } as unknown as ImportService;
+
+    marketDataService = {
+      getRange: jest.fn().mockResolvedValue([])
+    } as unknown as MarketDataService;
+
+    platformService = {
+      getPlatform: jest.fn().mockResolvedValue({ name: 'Broker X' }),
+      getPlatforms: jest.fn().mockResolvedValue([
+        { id: 'platform-1', name: 'Broker X' },
+        { id: 'platform-2', name: 'Bank Y' }
+      ])
+    } as unknown as PlatformService;
 
     portfolioTableService = {
       getAccountsTable: jest.fn().mockResolvedValue('## Accounts'),
       getActivitiesTable: jest.fn().mockResolvedValue('## Activities'),
       getHoldingsTable: jest.fn().mockResolvedValue('## Holdings'),
+      getMarketDataTable: jest.fn().mockResolvedValue('## Market Data'),
       getPerformanceTable: jest.fn().mockResolvedValue('## Performance'),
       getWatchlistTable: jest.fn().mockResolvedValue('## Watchlist')
     } as unknown as PortfolioTableService;
 
     pushService = {
+      getSubscriptionCount: jest.fn().mockResolvedValue(2),
       isConfigured: jest.fn().mockReturnValue(true),
       sendToUser: jest.fn().mockResolvedValue(2)
     } as unknown as PushService;
+
+    redisCache = new Map<string, string>();
+
+    redisCacheService = {
+      get: jest.fn().mockImplementation(async (key: string) => {
+        return redisCache.get(key);
+      }),
+      remove: jest.fn().mockImplementation(async (key: string) => {
+        redisCache.delete(key);
+      }),
+      set: jest.fn().mockImplementation(async (key: string, value: string) => {
+        redisCache.set(key, value);
+      })
+    } as unknown as RedisCacheService;
 
     reportsService = {
       createReport: jest.fn().mockResolvedValue({ id: 'report-id' }),
@@ -120,6 +188,21 @@ describe('McpService', () => {
     } as unknown as ReportsService;
 
     symbolProfileService = {
+      getSymbolProfileOfUser: jest.fn().mockResolvedValue({
+        currency: 'USD',
+        dataSource: DataSource.YAHOO,
+        isActive: true,
+        scraperConfiguration: null,
+        symbol: 'AAPL'
+      }),
+      getSymbolProfilesByIds: jest.fn().mockResolvedValue([
+        {
+          currency: 'USD',
+          dataSource: DataSource.YAHOO,
+          id: 'symbol-profile-id',
+          symbol: 'AAPL'
+        }
+      ]),
       getSymbolProfilesOfUser: jest.fn().mockResolvedValue([])
     } as unknown as SymbolProfileService;
 
@@ -132,11 +215,16 @@ describe('McpService', () => {
     mcpService = new McpService(
       accountBalanceService,
       accountService,
+      activitiesService,
       apiService,
       configurationService,
+      dataGatheringService,
       importService,
+      marketDataService,
+      platformService,
       portfolioTableService,
       pushService,
+      redisCacheService,
       reportsService,
       symbolProfileService,
       symbolService,
@@ -813,6 +901,700 @@ describe('McpService', () => {
     });
   });
 
+  describe('createAccount', () => {
+    const parameters = { currency: 'EUR', name: 'Broker', userId };
+
+    it('Refuses a user without the permission to create an account', async () => {
+      setupUser([]);
+
+      await expect(mcpService.createAccount(parameters)).rejects.toThrow(
+        HttpException
+      );
+
+      expect(accountService.createAccount).not.toHaveBeenCalled();
+    });
+
+    it('Creates the account of the user with a platform which is given by its name', async () => {
+      setupUser([permissions.createAccount]);
+
+      const result = await mcpService.createAccount({
+        ...parameters,
+        balance: 1500,
+        platform: 'broker x'
+      });
+
+      expect(accountService.createAccount).toHaveBeenCalledWith({
+        balance: 1500,
+        userId,
+        data: {
+          currency: 'EUR',
+          name: 'Broker',
+          platform: { connect: { id: 'platform-1' } },
+          user: { connect: { id: userId } }
+        }
+      });
+
+      expect(result.content[0].text).toContain('Id: new-account-id');
+    });
+
+    it('Accepts the identifier of a platform', async () => {
+      setupUser([permissions.createAccount]);
+
+      await mcpService.createAccount({ ...parameters, platform: 'platform-2' });
+
+      expect(accountService.createAccount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            platform: { connect: { id: 'platform-2' } }
+          })
+        })
+      );
+    });
+
+    it('Refuses an unknown platform and lists the platforms', async () => {
+      setupUser([permissions.createAccount]);
+
+      await expect(
+        mcpService.createAccount({ ...parameters, platform: 'Unknown' })
+      ).rejects.toThrow(/Available platforms: Broker X, Bank Y/);
+
+      expect(accountService.createAccount).not.toHaveBeenCalled();
+    });
+
+    it('Does not give the cash balance of the account', async () => {
+      setupUser([permissions.createAccount]);
+
+      const result = await mcpService.createAccount({
+        ...parameters,
+        balance: 1500
+      });
+
+      expect(result.content[0].text).not.toContain('1500');
+      expect(result.content[0].text).not.toMatch(/balance/i);
+    });
+  });
+
+  describe('updateAccount', () => {
+    const parameters = { id: 'account-id', name: 'New name', userId };
+
+    it('Refuses a user without the permission to update an account', async () => {
+      setupUser([]);
+
+      await expect(mcpService.updateAccount(parameters)).rejects.toThrow(
+        HttpException
+      );
+
+      expect(accountService.updateAccount).not.toHaveBeenCalled();
+    });
+
+    it('Refuses an account which does not belong to the user', async () => {
+      setupUser([permissions.updateAccount]);
+
+      jest.spyOn(accountService, 'account').mockResolvedValue(null);
+
+      await expect(mcpService.updateAccount(parameters)).rejects.toThrow(
+        CallerFacingError
+      );
+
+      expect(accountService.account).toHaveBeenCalledWith({
+        id_userId: { userId, id: 'account-id' }
+      });
+      expect(accountService.updateAccount).not.toHaveBeenCalled();
+    });
+
+    it('Refuses a call without a field to update', async () => {
+      setupUser([permissions.updateAccount]);
+
+      await expect(
+        mcpService.updateAccount({ id: 'account-id', userId })
+      ).rejects.toThrow(CallerFacingError);
+
+      expect(accountService.updateAccount).not.toHaveBeenCalled();
+    });
+
+    it('Updates the fields of the account of the user and keeps the others', async () => {
+      setupUser([permissions.updateAccount]);
+
+      jest
+        .spyOn(accountService, 'account')
+        .mockResolvedValue({ userId, id: 'account-id' } as AccountWithBalance);
+
+      await mcpService.updateAccount({
+        ...parameters,
+        currency: 'CHF',
+        platform: 'Bank Y'
+      });
+
+      expect(accountService.updateAccount).toHaveBeenCalledWith({
+        userId,
+        data: {
+          currency: 'CHF',
+          name: 'New name',
+          platform: { connect: { id: 'platform-2' } },
+          user: { connect: { id: userId } }
+        },
+        where: { id_userId: { id: 'account-id', userId } }
+      });
+    });
+
+    it('Removes the platform with null', async () => {
+      setupUser([permissions.updateAccount]);
+
+      jest.spyOn(accountService, 'account').mockResolvedValue({
+        userId,
+        id: 'account-id',
+        platformId: 'platform-1'
+      } as AccountWithBalance);
+
+      await mcpService.updateAccount({
+        id: 'account-id',
+        platform: null,
+        userId
+      });
+
+      expect(accountService.updateAccount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ platform: { disconnect: true } })
+        })
+      );
+    });
+  });
+
+  describe('updateActivity', () => {
+    const originalActivity = {
+      accountId: null,
+      comment: 'Original comment',
+      currency: null,
+      date: new Date('2024-01-01'),
+      fee: 1,
+      id: 'activity-id',
+      quantity: 10,
+      symbolProfileId: 'symbol-profile-id',
+      type: ActivityType.BUY,
+      unitPrice: 100,
+      userId
+    };
+
+    const parameters = { userId, id: 'activity-id', quantity: 12 };
+
+    beforeEach(() => {
+      jest
+        .spyOn(activitiesService, 'order')
+        .mockResolvedValue(originalActivity as never);
+
+      jest.spyOn(activitiesService, 'updateActivity').mockResolvedValue({
+        ...originalActivity,
+        quantity: 12
+      } as never);
+    });
+
+    it('Refuses a user without the permission to update an activity', async () => {
+      setupUser([]);
+
+      await expect(mcpService.updateActivity(parameters)).rejects.toThrow(
+        HttpException
+      );
+
+      expect(activitiesService.order).not.toHaveBeenCalled();
+      expect(activitiesService.updateActivity).not.toHaveBeenCalled();
+    });
+
+    it('Refuses an activity which does not belong to the user', async () => {
+      setupUser([permissions.updateActivity]);
+
+      jest.spyOn(activitiesService, 'order').mockResolvedValue(null);
+
+      await expect(mcpService.updateActivity(parameters)).rejects.toThrow(
+        CallerFacingError
+      );
+
+      expect(activitiesService.order).toHaveBeenCalledWith({
+        userId,
+        id: 'activity-id'
+      });
+      expect(activitiesService.updateActivity).not.toHaveBeenCalled();
+    });
+
+    it('Refuses an activity which another user owns', async () => {
+      setupUser([permissions.updateActivity]);
+
+      jest.spyOn(activitiesService, 'order').mockResolvedValue({
+        ...originalActivity,
+        userId: 'other-user-id'
+      } as never);
+
+      await expect(mcpService.updateActivity(parameters)).rejects.toThrow(
+        CallerFacingError
+      );
+
+      expect(activitiesService.updateActivity).not.toHaveBeenCalled();
+    });
+
+    it('Refuses an account which does not belong to the user', async () => {
+      setupUser([permissions.updateActivity]);
+
+      jest.spyOn(accountService, 'account').mockResolvedValue(null);
+
+      await expect(
+        mcpService.updateActivity({
+          userId,
+          accountId: 'other-account-id',
+          id: 'activity-id'
+        })
+      ).rejects.toThrow(CallerFacingError);
+
+      expect(accountService.account).toHaveBeenCalledWith({
+        id_userId: { userId, id: 'other-account-id' }
+      });
+      expect(activitiesService.updateActivity).not.toHaveBeenCalled();
+    });
+
+    it('Refuses a call without a field to update', async () => {
+      setupUser([permissions.updateActivity]);
+
+      await expect(
+        mcpService.updateActivity({ userId, id: 'activity-id' })
+      ).rejects.toThrow(CallerFacingError);
+
+      expect(activitiesService.updateActivity).not.toHaveBeenCalled();
+    });
+
+    it('Updates the given fields and keeps the others', async () => {
+      setupUser([permissions.updateActivity]);
+
+      await mcpService.updateActivity(parameters);
+
+      expect(activitiesService.updateActivity).toHaveBeenCalledWith({
+        userId,
+        data: {
+          account: undefined,
+          comment: 'Original comment',
+          currency: 'USD',
+          date: originalActivity.date,
+          fee: 1,
+          quantity: 12,
+          SymbolProfile: {
+            connect: {
+              dataSource_symbol: {
+                dataSource: DataSource.YAHOO,
+                symbol: 'AAPL'
+              }
+            }
+          },
+          type: ActivityType.BUY,
+          unitPrice: 100,
+          user: { connect: { id: userId } }
+        },
+        originalDate: originalActivity.date,
+        where: { id: 'activity-id' }
+      });
+    });
+
+    it('Connects an account of the user and parses the date', async () => {
+      setupUser([permissions.updateActivity]);
+
+      jest
+        .spyOn(accountService, 'account')
+        .mockResolvedValue({ userId, id: 'account-id' } as AccountWithBalance);
+
+      await mcpService.updateActivity({
+        userId,
+        accountId: 'account-id',
+        date: '2024-02-03',
+        id: 'activity-id'
+      });
+
+      expect(activitiesService.updateActivity).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            account: { connect: { id_userId: { userId, id: 'account-id' } } },
+            date: new Date('2024-02-03')
+          })
+        })
+      );
+    });
+
+    it('Disconnects the account with null', async () => {
+      setupUser([permissions.updateActivity]);
+
+      await mcpService.updateActivity({
+        userId,
+        accountId: null,
+        id: 'activity-id'
+      });
+
+      expect(activitiesService.updateActivity).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ account: { disconnect: true } })
+        })
+      );
+      expect(accountService.account).not.toHaveBeenCalled();
+    });
+
+    it('Gives the quantity and the fee only with the values', async () => {
+      setupUser([permissions.updateActivity]);
+
+      const withValues = await mcpService.updateActivity({
+        ...parameters,
+        withValues: true
+      });
+
+      const withoutValues = await mcpService.updateActivity(parameters);
+
+      expect(withValues.content[0].text).toContain('Quantity: 12');
+      expect(withValues.content[0].text).toContain('Fee: 1');
+      expect(withoutValues.content[0].text).not.toContain('Quantity');
+      expect(withoutValues.content[0].text).not.toContain('Fee');
+    });
+  });
+
+  describe('deleteActivity', () => {
+    const activity = {
+      accountId: null,
+      currency: null,
+      date: new Date('2024-01-01'),
+      fee: 1,
+      id: 'activity-id',
+      quantity: 10,
+      symbolProfileId: 'symbol-profile-id',
+      type: ActivityType.BUY,
+      unitPrice: 100,
+      userId
+    };
+
+    beforeEach(() => {
+      jest
+        .spyOn(activitiesService, 'order')
+        .mockResolvedValue(activity as never);
+    });
+
+    it('Refuses a user without the permission to delete an activity', async () => {
+      setupUser([]);
+
+      await expect(
+        mcpService.deleteActivity({ userId, id: 'activity-id' })
+      ).rejects.toThrow(HttpException);
+
+      expect(activitiesService.deleteActivity).not.toHaveBeenCalled();
+    });
+
+    it('Refuses an activity which does not belong to the user', async () => {
+      setupUser([permissions.deleteActivity]);
+
+      jest.spyOn(activitiesService, 'order').mockResolvedValue(null);
+
+      await expect(
+        mcpService.deleteActivity({ userId, id: 'activity-id' })
+      ).rejects.toThrow(CallerFacingError);
+
+      expect(activitiesService.deleteActivity).not.toHaveBeenCalled();
+    });
+
+    it('Deletes the activity of the user', async () => {
+      setupUser([permissions.deleteActivity]);
+
+      const result = await mcpService.deleteActivity({
+        userId,
+        id: 'activity-id'
+      });
+
+      expect(activitiesService.deleteActivity).toHaveBeenCalledWith({
+        id: 'activity-id'
+      });
+      expect(result.content[0].text).toContain('Deleted the activity');
+    });
+
+    it('Gives the quantity and the fee only with the values', async () => {
+      setupUser([permissions.deleteActivity]);
+
+      const withValues = await mcpService.deleteActivity({
+        userId,
+        id: 'activity-id',
+        withValues: true
+      });
+
+      const withoutValues = await mcpService.deleteActivity({
+        userId,
+        id: 'activity-id'
+      });
+
+      expect(withValues.content[0].text).toContain('Quantity: 10');
+      expect(withoutValues.content[0].text).not.toContain('Quantity');
+      expect(withoutValues.content[0].text).not.toContain('Fee');
+    });
+  });
+
+  describe('gatherMarketData', () => {
+    const parameters = {
+      userId,
+      dataSource: DataSource.YAHOO,
+      fullHistory: false,
+      symbol: 'AAPL'
+    };
+
+    beforeEach(() => {
+      setupUser([permissions.createActivity]);
+    });
+
+    it('Refuses a user without the permission to create an activity', async () => {
+      setupUser([]);
+
+      await expect(mcpService.gatherMarketData(parameters)).rejects.toThrow(
+        HttpException
+      );
+
+      expect(dataGatheringService.gatherSymbol).not.toHaveBeenCalled();
+    });
+
+    it('Refuses an asset profile which is neither in the portfolio nor in the watchlist', async () => {
+      jest
+        .spyOn(symbolProfileService, 'getSymbolProfileOfUser')
+        .mockResolvedValue(null);
+
+      await expect(mcpService.gatherMarketData(parameters)).rejects.toThrow(
+        /neither in the portfolio nor in the watchlist/
+      );
+
+      expect(symbolProfileService.getSymbolProfileOfUser).toHaveBeenCalledWith({
+        userId,
+        dataSource: DataSource.YAHOO,
+        symbol: 'AAPL'
+      });
+      expect(dataGatheringService.gatherSymbol).not.toHaveBeenCalled();
+    });
+
+    it('Refuses an inactive asset profile', async () => {
+      jest
+        .spyOn(symbolProfileService, 'getSymbolProfileOfUser')
+        .mockResolvedValue({
+          currency: 'USD',
+          dataSource: DataSource.YAHOO,
+          isActive: false,
+          scraperConfiguration: null,
+          symbol: 'AAPL'
+        });
+
+      await expect(mcpService.gatherMarketData(parameters)).rejects.toThrow(
+        CallerFacingError
+      );
+
+      expect(dataGatheringService.gatherSymbol).not.toHaveBeenCalled();
+    });
+
+    it('Refuses a manual asset profile without a scraper configuration', async () => {
+      jest
+        .spyOn(symbolProfileService, 'getSymbolProfileOfUser')
+        .mockResolvedValue({
+          currency: 'USD',
+          dataSource: DataSource.MANUAL,
+          isActive: true,
+          scraperConfiguration: null,
+          symbol: 'AAPL'
+        });
+
+      await expect(
+        mcpService.gatherMarketData({
+          ...parameters,
+          dataSource: DataSource.MANUAL
+        })
+      ).rejects.toThrow(CallerFacingError);
+
+      expect(dataGatheringService.gatherSymbol).not.toHaveBeenCalled();
+    });
+
+    it('Queues the gathering of the last 30 days', async () => {
+      const result = await mcpService.gatherMarketData(parameters);
+
+      const { date, ...rest } = (dataGatheringService.gatherSymbol as jest.Mock)
+        .mock.calls[0][0] as { date: Date };
+
+      expect(rest).toEqual({ dataSource: DataSource.YAHOO, symbol: 'AAPL' });
+      expect(date.getTime()).toBeLessThan(
+        Date.now() - 29 * 24 * 60 * 60 * 1000
+      );
+      expect(result.content[0].text).toContain('1 job(s)');
+    });
+
+    it('Queues the gathering of the full history', async () => {
+      await mcpService.gatherMarketData({ ...parameters, fullHistory: true });
+
+      expect(dataGatheringService.gatherSymbol).toHaveBeenCalledWith({
+        dataSource: DataSource.YAHOO,
+        date: undefined,
+        symbol: 'AAPL'
+      });
+    });
+
+    it('Refuses a second gathering of the same asset profile in the interval', async () => {
+      await mcpService.gatherMarketData(parameters);
+
+      await expect(mcpService.gatherMarketData(parameters)).rejects.toThrow(
+        /15 minutes/
+      );
+
+      expect(dataGatheringService.gatherSymbol).toHaveBeenCalledTimes(1);
+      expect(redisCacheService.set).toHaveBeenCalledWith(
+        `mcp-gather-market-data-${userId}-YAHOO-AAPL`,
+        expect.any(String),
+        GATHER_MARKET_DATA_INTERVAL
+      );
+    });
+
+    it('Allows a gathering of another asset profile in the interval', async () => {
+      await mcpService.gatherMarketData(parameters);
+      await mcpService.gatherMarketData({ ...parameters, symbol: 'MSFT' });
+
+      expect(dataGatheringService.gatherSymbol).toHaveBeenCalledTimes(2);
+    });
+
+    it('Releases the interval if nothing was queued', async () => {
+      (dataGatheringService.gatherSymbol as jest.Mock).mockResolvedValueOnce(
+        []
+      );
+
+      await expect(mcpService.gatherMarketData(parameters)).rejects.toThrow(
+        CallerFacingError
+      );
+
+      await expect(mcpService.gatherMarketData(parameters)).resolves.toEqual(
+        expect.anything()
+      );
+    });
+
+    it('Gives what was queued and no monetary value', async () => {
+      const result = await mcpService.gatherMarketData(parameters);
+
+      expect(result.content[0].text).not.toMatch(
+        /balance|quantity|\d+\.\d{2}/i
+      );
+    });
+  });
+
+  describe('getMarketData', () => {
+    const parameters = {
+      userId,
+      dataSource: DataSource.YAHOO,
+      range: 'max',
+      symbol: 'AAPL'
+    };
+
+    function getMarketDataOfDays(numberOfDays: number) {
+      return Array.from({ length: numberOfDays }, (_, index) => {
+        return {
+          date: new Date(Date.UTC(2020, 0, 1 + index)),
+          marketPrice: 100 + index
+        };
+      });
+    }
+
+    it('Refuses an asset profile which is neither in the portfolio nor in the watchlist', async () => {
+      jest
+        .spyOn(symbolProfileService, 'getSymbolProfileOfUser')
+        .mockResolvedValue(null);
+
+      await expect(mcpService.getMarketData(parameters)).rejects.toThrow(
+        CallerFacingError
+      );
+
+      expect(marketDataService.getRange).not.toHaveBeenCalled();
+    });
+
+    it('Reads the market data of the database in the date range', async () => {
+      const marketData = getMarketDataOfDays(3);
+
+      jest
+        .spyOn(marketDataService, 'getRange')
+        .mockResolvedValue(marketData as never);
+
+      const result = await mcpService.getMarketData(parameters);
+
+      expect(marketDataService.getRange).toHaveBeenCalledWith({
+        assetProfileIdentifiers: [
+          { dataSource: DataSource.YAHOO, symbol: 'AAPL' }
+        ],
+        dateQuery: { gte: expect.any(Date), lt: expect.any(Date) }
+      });
+      expect(portfolioTableService.getMarketDataTable).toHaveBeenCalledWith({
+        marketData,
+        currency: 'USD',
+        numberOfMarketPrices: 3,
+        sampling: undefined
+      });
+      expect(result.content[0].text).toBe('## Market Data');
+    });
+
+    it('Samples a long range weekly', async () => {
+      jest
+        .spyOn(marketDataService, 'getRange')
+        .mockResolvedValue(getMarketDataOfDays(700) as never);
+
+      await mcpService.getMarketData(parameters);
+
+      const { marketData, numberOfMarketPrices, sampling } = (
+        portfolioTableService.getMarketDataTable as jest.Mock
+      ).mock.calls[0][0] as {
+        marketData: { date: Date }[];
+        numberOfMarketPrices: number;
+        sampling: string;
+      };
+
+      expect(sampling).toBe('weekly');
+      expect(numberOfMarketPrices).toBe(700);
+      expect(marketData.length).toBeLessThanOrEqual(MARKET_DATA_MAX_POINTS);
+      expect(marketData.length).toBeGreaterThan(90);
+    });
+
+    it('Samples a very long range monthly', async () => {
+      jest
+        .spyOn(marketDataService, 'getRange')
+        .mockResolvedValue(getMarketDataOfDays(6000) as never);
+
+      await mcpService.getMarketData(parameters);
+
+      const { marketData, sampling } = (
+        portfolioTableService.getMarketDataTable as jest.Mock
+      ).mock.calls[0][0] as { marketData: unknown[]; sampling: string };
+
+      expect(sampling).toBe('monthly');
+      expect(marketData.length).toBeLessThanOrEqual(MARKET_DATA_MAX_POINTS);
+    });
+  });
+
+  describe('getNotificationStatus', () => {
+    it('Gives the number of the subscribed devices and the configuration', async () => {
+      const result = await mcpService.getNotificationStatus({ userId });
+
+      expect(pushService.getSubscriptionCount).toHaveBeenCalledWith({
+        userId
+      });
+      expect(result.content[0].text).toContain('Subscribed devices: 2');
+      expect(result.content[0].text).toContain('(VAPID keys): yes');
+    });
+
+    it('Explains how to subscribe a device if there is none', async () => {
+      (pushService.getSubscriptionCount as jest.Mock).mockResolvedValue(0);
+
+      const result = await mcpService.getNotificationStatus({ userId });
+
+      expect(result.content[0].text).toContain('Subscribed devices: 0');
+      expect(result.content[0].text).toContain('enable the notifications');
+    });
+
+    it('Tells that the keys are missing', async () => {
+      (pushService.isConfigured as jest.Mock).mockReturnValue(false);
+
+      const result = await mcpService.getNotificationStatus({ userId });
+
+      expect(result.content[0].text).toContain('(VAPID keys): no');
+    });
+
+    it('Never gives the endpoint or the keys of a device', async () => {
+      const result = await mcpService.getNotificationStatus({ userId });
+
+      expect(result.content[0].text).not.toMatch(/endpoint|p256dh|auth/i);
+    });
+  });
+
   describe('reports', () => {
     it('Gives the open decisions of the user', async () => {
       await mcpService.getOpenDecisions({ userId });
@@ -924,7 +1706,22 @@ describe('McpService', () => {
         userId,
         notification: { body: 'Body', title: 'Title', url: undefined }
       });
-      expect(result.content[0].text).toContain('2');
+      expect(result.content[0].text).toBe(
+        'Sent the notification to 2 device(s)'
+      );
+    });
+
+    it('Explains how to subscribe a device if the notification reached none', async () => {
+      (pushService.sendToUser as jest.Mock).mockResolvedValue(0);
+
+      const result = await mcpService.sendNotification({
+        body: 'Body',
+        title: 'Title',
+        userId
+      });
+
+      expect(result.content[0].text).toContain('0 device(s)');
+      expect(result.content[0].text).toContain('enable the notifications');
     });
 
     it('Refuses to send a notification without the configuration', async () => {

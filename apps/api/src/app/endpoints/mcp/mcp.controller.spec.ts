@@ -222,6 +222,7 @@ describe('GhostfolioMcpController', () => {
       'get-performance',
       'get-portfolio',
       'get-watchlist',
+      'get-market-data',
       'get-decision-answers',
       'get-open-decisions',
       'get-report',
@@ -251,6 +252,11 @@ describe('GhostfolioMcpController', () => {
       'import-activities',
       'search-asset-profiles',
       'update-account-balance',
+      'create-account',
+      'update-account',
+      'gather-market-data',
+      'get-market-data',
+      'get-notification-status',
       'get-decision-answers',
       'get-open-decisions',
       'get-report',
@@ -278,6 +284,7 @@ describe('GhostfolioMcpController', () => {
       'get-performance',
       'get-portfolio',
       'get-watchlist',
+      'get-market-data',
       'get-decision-answers',
       'get-open-decisions',
       'get-report',
@@ -305,6 +312,13 @@ describe('GhostfolioMcpController', () => {
       'import-activities',
       'search-asset-profiles',
       'update-account-balance',
+      'create-account',
+      'update-account',
+      'update-activity',
+      'delete-activity',
+      'gather-market-data',
+      'get-market-data',
+      'get-notification-status',
       'get-decision-answers',
       'get-open-decisions',
       'get-report',
@@ -376,6 +390,109 @@ describe('GhostfolioMcpController', () => {
     expect(
       getMetadataOfMethod<Scope[]>(REQUIRES_SCOPE_KEY, 'updateAccountBalance')
     ).toEqual([scopes.accountUpdate]);
+  });
+
+  it('Requires the scopes of the accounts for the tools to create and to update an account', () => {
+    expect(
+      getMetadataOfMethod<Scope[]>(REQUIRES_SCOPE_KEY, 'createAccount')
+    ).toEqual([scopes.accountCreate]);
+    expect(
+      getMetadataOfMethod<Scope[]>(REQUIRES_SCOPE_KEY, 'updateAccount')
+    ).toEqual([scopes.accountUpdate]);
+  });
+
+  // The permission "Restricted view and manage" has no scope to read the
+  // values, hence the tools which give the values of an activity stay unlisted
+  it('Requires the scope to read the values in addition for the tools to update and to delete an activity', () => {
+    expect(
+      getMetadataOfMethod<Scope[]>(REQUIRES_SCOPE_KEY, 'updateActivity')
+    ).toEqual([scopes.activityUpdate, scopes.portfolioReadValues]);
+    expect(
+      getMetadataOfMethod<Scope[]>(REQUIRES_SCOPE_KEY, 'deleteActivity')
+    ).toEqual([scopes.activityDelete, scopes.portfolioReadValues]);
+  });
+
+  it('Requires the scope to create an activity for the tool to gather market data', () => {
+    expect(
+      getMetadataOfMethod<Scope[]>(REQUIRES_SCOPE_KEY, 'gatherMarketData')
+    ).toEqual([scopes.activityCreate]);
+  });
+
+  it('Requires the scope to read the portfolio, but not the values, for the tool to get market data', () => {
+    expect(
+      getMetadataOfMethod<Scope[]>(REQUIRES_SCOPE_KEY, 'getMarketData')
+    ).toEqual([scopes.portfolioRead]);
+  });
+
+  it('Requires the scope to create a notification for the tool to get the notification status', () => {
+    expect(
+      getMetadataOfMethod<Scope[]>(REQUIRES_SCOPE_KEY, 'getNotificationStatus')
+    ).toEqual([scopes.notificationCreate]);
+  });
+
+  it('Marks the tool to delete an activity as destructive', () => {
+    expect(
+      getMetadataOfMethod<ToolMetadata>(MCP_TOOL_METADATA_KEY, 'deleteActivity')
+        .annotations
+    ).toEqual(
+      expect.objectContaining({ destructiveHint: true, readOnlyHint: false })
+    );
+  });
+
+  it('Marks the tools which only read as read-only', () => {
+    for (const methodName of ['getMarketData', 'getNotificationStatus']) {
+      expect(
+        getMetadataOfMethod<ToolMetadata>(MCP_TOOL_METADATA_KEY, methodName)
+          .annotations
+      ).toEqual(
+        expect.objectContaining({ openWorldHint: false, readOnlyHint: true })
+      );
+    }
+  });
+
+  it('Passes the permission to read the values to the tools to update and to delete an activity', async () => {
+    for (const [accessLevel, expected] of [
+      ['CREATE_READ_UPDATE_DELETE', true],
+      ['CREATE_READ_RESTRICTED_UPDATE_DELETE', false]
+    ] as const) {
+      const mcpService = {
+        deleteActivity: jest.fn(),
+        updateActivity: jest.fn()
+      };
+
+      const controller = new GhostfolioMcpController(
+        mcpService as unknown as McpService
+      );
+
+      const impersonationContext = {
+        isActive: true,
+        scopes: getScopesOfAccess({
+          scopes: getScopesOfAccessLevel(accessLevel),
+          type: 'MCP'
+        }),
+        userId: 'user-id'
+      } as ImpersonationContext;
+
+      await controller.updateActivity(impersonationContext, {
+        id: 'activity-id',
+        quantity: 1
+      });
+      await controller.deleteActivity(impersonationContext, {
+        id: 'activity-id'
+      });
+
+      expect(mcpService.updateActivity).toHaveBeenCalledWith({
+        id: 'activity-id',
+        quantity: 1,
+        userId: 'user-id',
+        withValues: expected
+      });
+      expect(mcpService.deleteActivity).toHaveBeenCalledWith({
+        id: 'activity-id',
+        userId: 'user-id',
+        withValues: expected
+      });
+    }
   });
 
   // The tools have no try and catch, hence the filter is the only guarantee

@@ -280,7 +280,7 @@ describe('Scopes', () => {
 
     // The controller exposes no tool for a further write scope, hence it stays
     // ineffective
-    it('Gives the write scopes to update an account, to create an activity and of the copilot only', () => {
+    it('Gives the write scopes to create and update an account, to change an activity and of the copilot only', () => {
       expect(
         getScopesOfAccess({
           scopes: [...SCOPES_OF_READ_ACCESS, ...SCOPES_OF_WRITE_ACCESS],
@@ -289,8 +289,11 @@ describe('Scopes', () => {
           return SCOPES_OF_WRITE_ACCESS.includes(scope as Scope);
         })
       ).toEqual([
+        scopes.accountCreate,
         scopes.accountUpdate,
         scopes.activityCreate,
+        scopes.activityDelete,
+        scopes.activityUpdate,
         scopes.notificationCreate,
         scopes.reportCreate,
         scopes.reportUpdate

@@ -19,6 +19,7 @@ import {
 } from '@ghostfolio/common/interfaces';
 import { AccountWithValue, DateRange } from '@ghostfolio/common/types';
 
+import { utc } from '@date-fns/utc';
 import { Injectable } from '@nestjs/common';
 import {
   AssetClass,
@@ -78,6 +79,12 @@ function getPercentage(value: number) {
  * quantity or with a monetary value, except the unit price of an activity, is
  * given only with the values.
  */
+interface MarketDataTableRow {
+  currency: string;
+  date: Date;
+  marketPrice: number;
+}
+
 @Injectable()
 export class PortfolioTableService {
   private static readonly ACCOUNTS_TABLE_COLUMN_DEFINITIONS: TableColumnDefinition<AccountWithValue>[] =
@@ -312,6 +319,29 @@ export class PortfolioTableService {
       }
     ];
 
+  private static readonly MARKET_DATA_TABLE_COLUMN_DEFINITIONS: TableColumnDefinition<MarketDataTableRow>[] =
+    [
+      {
+        getValue: ({ date }) => {
+          return format(date, DATE_FORMAT, { in: utc });
+        },
+        name: 'Date'
+      },
+      {
+        align: 'right',
+        getValue: ({ marketPrice }) => {
+          return marketPrice.toString();
+        },
+        name: 'Market Price'
+      },
+      {
+        getValue: ({ currency }) => {
+          return currency;
+        },
+        name: 'Currency'
+      }
+    ];
+
   private static readonly PERFORMANCE_TABLE_COLUMN_DEFINITIONS: TableColumnDefinition<PortfolioPerformance>[] =
     [
       {
@@ -487,6 +517,14 @@ export class PortfolioTableService {
 
   public static getHoldingsTableValueColumnNames() {
     return PortfolioTableService.HOLDINGS_TABLE_VALUE_COLUMN_DEFINITIONS.map(
+      ({ name }) => {
+        return name;
+      }
+    );
+  }
+
+  public static getMarketDataTableColumnNames() {
+    return PortfolioTableService.MARKET_DATA_TABLE_COLUMN_DEFINITIONS.map(
       ({ name }) => {
         return name;
       }
@@ -676,6 +714,50 @@ export class PortfolioTableService {
         rows: sortedHoldings
       })
     ].join('\n');
+  }
+
+  /**
+   * Renders the market prices of an asset profile, which are not values of the
+   * portfolio, hence the table does not depend on the access to the values
+   */
+  public async getMarketDataTable({
+    currency,
+    marketData,
+    numberOfMarketPrices,
+    sampling
+  }: {
+    currency: string;
+    marketData: { date: Date; marketPrice: number }[];
+    numberOfMarketPrices: number;
+    sampling?: 'monthly' | 'weekly';
+  }) {
+    const marketDataSection = ['## Market Data', ''];
+
+    if (marketData.length === 0) {
+      marketDataSection.push(
+        'No market data found. Use gather-market-data to gather it.'
+      );
+
+      return marketDataSection.join('\n');
+    }
+
+    marketDataSection.push(
+      sampling
+        ? `Showing ${marketData.length} of ${numberOfMarketPrices} market prices, the last market price of each ${
+            sampling === 'weekly' ? 'week' : 'month'
+          }, the oldest first.`
+        : `Showing all ${marketData.length} market prices, the oldest first.`,
+      '',
+      await getMarkdownTable({
+        columnDefinitions:
+          PortfolioTableService.MARKET_DATA_TABLE_COLUMN_DEFINITIONS,
+        rows: marketData.map(({ date, marketPrice }) => {
+          return { currency, date, marketPrice };
+        })
+      })
+    );
+
+    return marketDataSection.join('\n');
   }
 
   public async getPerformanceTable({

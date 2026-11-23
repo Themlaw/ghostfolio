@@ -91,8 +91,13 @@ export const SCOPES_OF_READ_RESTRICTED_ACCESS: readonly Scope[] =
 const SCOPES_OF_TYPE: Record<AccessType, readonly Scope[]> = {
   MCP: [
     ...SCOPES_OF_READ_ACCESS,
+    scopes.accountCreate,
     scopes.accountUpdate,
     scopes.activityCreate,
+    // The tools to update and to delete an activity require the scope to read
+    // the values in addition, hence a restricted access does not list them
+    scopes.activityDelete,
+    scopes.activityUpdate,
     scopes.notificationCreate,
     scopes.reportCreate,
     scopes.reportUpdate

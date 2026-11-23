@@ -24,6 +24,7 @@ describe('PushService', () => {
 
     prismaService = {
       pushSubscription: {
+        count: jest.fn().mockResolvedValue(3),
         delete: jest.fn().mockResolvedValue({}),
         findMany: jest.fn().mockResolvedValue([
           {
@@ -42,6 +43,18 @@ describe('PushService', () => {
       } as unknown as ConfigurationService,
       prismaService as unknown as PrismaService
     );
+  });
+
+  describe('getSubscriptionCount', () => {
+    it('Gives the number of the devices of the user without their data', async () => {
+      await expect(
+        service.getSubscriptionCount({ userId: 'user-id' })
+      ).resolves.toBe(3);
+
+      expect(prismaService.pushSubscription.count).toHaveBeenCalledWith({
+        where: { userId: 'user-id' }
+      });
+    });
   });
 
   describe('buildPushPayload', () => {
